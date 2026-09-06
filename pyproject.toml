@@ -1,0 +1,6 @@
+[project]
+name = "sqpulse"
+version = "0.1.0"
+description = "Use pulse sequence to drive qubit"
+requires-python = ">=3.14"
+dependencies = []
