@@ -25,7 +25,8 @@ class Transmon:
         t1 (float): Energy relaxation time T1 in seconds (default inf).
         t2 (float): Dephasing time T2 in seconds (default inf).
         thermal_population (float): Excited state thermal occupation n_th (default 0.0).
-        drive_coupling (float): Relative drive coupling efficiency (default 1.0).
+        omega_d (Optional[float]): Physical drive coupling strength in rad/s (defaults to 2*pi*50 MHz = 3.14e8 rad/s).
+        drive_coupling (Optional[float]): Alias / backward-compatible argument for omega_d.
     """
 
     def __init__(
@@ -37,7 +38,8 @@ class Transmon:
         t1: float = np.inf,
         t2: float = np.inf,
         thermal_population: float = 0.0,
-        drive_coupling: float = 1.0,
+        omega_d: Optional[float] = None,
+        drive_coupling: Optional[float] = None,
     ):
         if levels < 2:
             raise ValueError(f"Transmon levels must be >= 2, got {levels}")
@@ -48,7 +50,16 @@ class Transmon:
         self.t1 = float(t1)
         self.t2 = float(t2)
         self.thermal_population = float(thermal_population)
-        self.drive_coupling = float(drive_coupling)
+
+        if omega_d is not None:
+            self.omega_d = float(omega_d)
+        elif drive_coupling is not None:
+            self.omega_d = float(drive_coupling)
+        else:
+            # Default physical drive coupling: 2*pi * 50 MHz (rad/s)
+            self.omega_d = 2.0 * np.pi * 50.0e6
+
+        self.drive_coupling = self.omega_d
 
         # Drive channel name
         self.drive = f"{self.name}.drive"
@@ -59,9 +70,9 @@ class Transmon:
         self._n = self._ad * self._a
         self._I = qutip.qeye(self.levels)
 
-        # Drive quadrature operators
-        self._H_drive_x = 0.5 * (self._a + self._ad) * self.drive_coupling
-        self._H_drive_y = 0.5 * 1j * (self._ad - self._a) * self.drive_coupling
+        # Drive quadrature operators: 0.5 * omega_d * (a + ad)
+        self._H_drive_x = 0.5 * self.omega_d * (self._a + self._ad)
+        self._H_drive_y = 0.5 * self.omega_d * 1j * (self._ad - self._a)
 
         # Pauli projections in {|0>, |1>} subspace
         zero = qutip.basis(self.levels, 0)
@@ -184,8 +195,80 @@ class Transmon:
 
         return ops
 
+    @classmethod
+    def from_circuit(
+        cls,
+        name: str = "q0",
+        c_d: float = 5.0e-17,
+        c_g: float = 70.0e-15,
+        f_q: float = 5.0e9,
+        alpha: float = -250.0e6,
+        attenuation_dB: float = -60.0,
+        v_max: float = 1.0,
+        levels: int = 3,
+        t1: float = np.inf,
+        t2: float = np.inf,
+        thermal_population: float = 0.0,
+        **kwargs,
+    ) -> Transmon:
+        r"""Construct a Transmon model with drive coupling omega_d derived from circuit parameters.
+
+        According to circuit QED capacitive drive theory (Krantz et al., 2019):
+        .. math::
+            C_\Sigma = C_g + C_d
+            \omega_q = 2\pi f_q
+            Q_{\text{zpf}} = \sqrt{\frac{\hbar \omega_q C_\Sigma}{2}}
+            \Omega_{\text{chip}} = \frac{C_d}{C_\Sigma} \frac{Q_{\text{zpf}}}{\hbar} \quad [\text{rad}/(\text{s}\cdot\text{V})]
+            \alpha_{\text{line}} = 10^{\text{attenuation\_dB} / 20}
+            \Omega_d = \Omega_{\text{chip}} \cdot \alpha_{\text{line}} \cdot V_{\text{max}} \quad [\text{rad/s}]
+
+        Args:
+            name: Transmon qubit name.
+            c_d: Drive line coupling capacitance in Farads (default 5e-17 F = 0.05 fF).
+            c_g: Shunt capacitance to ground in Farads (default 70e-15 F = 70 fF).
+            f_q: Qubit 0-1 transition frequency in Hz (e.g. 5.0e9 Hz).
+            alpha: Anharmonicity in Hz (e.g. -250e6 Hz).
+            attenuation_dB: Total microwave line attenuation from AWG to chip in dB (default: -60.0 dB).
+            v_max: Maximum output voltage of the AWG in Volts (default: 1.0 V).
+            levels: Number of Hilbert space levels (default: 3).
+            t1: T1 relaxation time in seconds.
+            t2: T2 dephasing time in seconds.
+            thermal_population: Thermal population.
+
+        Returns:
+            Transmon instance with physically calculated omega_d.
+        """
+        import scipy.constants as const
+        hbar = const.hbar
+        c_sigma = float(c_g) + float(c_d)
+        omega_q = 2.0 * np.pi * float(f_q)
+        q_zpf = np.sqrt(0.5 * hbar * omega_q * c_sigma)
+        omega_chip = (float(c_d) / c_sigma) * (q_zpf / hbar)
+        alpha_line = 10.0 ** (float(attenuation_dB) / 20.0)
+        omega_d = omega_chip * alpha_line * float(v_max)
+
+        instance = cls(
+            name=name,
+            f_q=f_q,
+            alpha=alpha,
+            levels=levels,
+            t1=t1,
+            t2=t2,
+            thermal_population=thermal_population,
+            omega_d=omega_d,
+            **kwargs,
+        )
+        instance.c_d = float(c_d)
+        instance.c_g = float(c_g)
+        instance.c_sigma = c_sigma
+        instance.q_zpf = q_zpf
+        instance.omega_chip = omega_chip
+        instance.attenuation_dB = float(attenuation_dB)
+        instance.v_max = float(v_max)
+        return instance
+
     def __repr__(self) -> str:
         return (
             f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz, "
-            f"levels={self.levels}, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
+            f"levels={self.levels}, omega_d={self.omega_d:.3e}rad/s, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
         )

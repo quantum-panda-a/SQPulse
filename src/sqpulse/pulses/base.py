@@ -12,7 +12,8 @@ class Pulse(ABC):
 
     Attributes:
         duration (float): Pulse duration in seconds (s).
-        amp (float): Peak amplitude scaling (arbitrary units or rad/s).
+        amp (float): Peak normalized AWG waveform amplitude V_0 in [-1.0, 1.0] (or voltage in Volts).
+            Physical drive coupling strength Omega is configured on the Transmon (omega_d).
         phase (float): Carrier phase offset in radians.
         detune (float): Frequency detuning offset in Hz (df in exp(-i * 2pi * df * t)).
         drag (float): Dimensionless DRAG scaling factor beta (Q = -drag / (2*pi*alpha) * dI/dt).
@@ -23,14 +24,23 @@ class Pulse(ABC):
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         phase: float = 0.0,
         detune: float = 0.0,
         drag: float = 0.0,
         alpha: Optional[float] = None,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
+        if duration is None:
+            if length is not None:
+                duration = length
+            else:
+                raise ValueError("Pulse duration (or length) must be provided in seconds.")
+        elif length is not None:
+            raise ValueError("Specify either 'duration' or 'length', not both.")
+
         if duration <= 0:
             raise ValueError(f"Pulse duration must be positive, got {duration} s")
         self.duration = float(duration)
@@ -40,6 +50,50 @@ class Pulse(ABC):
         self.drag = float(drag)
         self.alpha = float(alpha) if alpha is not None else None
         self.name = name or self.__class__.__name__
+
+        if abs(self.amp) > 10.0:
+            import warnings
+            warnings.warn(
+                f"Pulse amp={self.amp:.2e} is unusually large for an AWG control amplitude (typically V_0 in [-1, 1]). "
+                f"If you intended to specify a physical Rabi frequency in rad/s, set the coupling on the Transmon "
+                f"via Transmon(..., omega_d=...) instead, and keep pulse amp as normalized V_0.",
+                UserWarning,
+                stacklevel=3,
+            )
+
+    @property
+    def length(self) -> float:
+        """Alias for pulse duration in seconds (s)."""
+        return self.duration
+
+    def _resolve_dt(
+        self,
+        dt: Optional[float],
+        default_points: int = 200,
+        max_dt: float = 1e-9,
+    ) -> float:
+        """Resolve sampling step dt in seconds. If None, chooses adaptive step."""
+        if dt is None:
+            return min(self.duration / default_points, max_dt)
+        dt = float(dt)
+        if dt <= 0:
+            raise ValueError(f"Sampling step dt must be positive, got {dt} s")
+        if dt >= self.duration:
+            hint = ""
+            if dt > 1e-3 and self.duration < 1e-3:
+                hint = f" Did you mean dt={dt}e-9 s ({dt} ns)? All time parameters in SQPulse are strictly in SI units (seconds)."
+            raise ValueError(
+                f"Sampling interval dt={dt} s cannot be greater than or equal to pulse duration={self.duration} s.{hint}"
+            )
+        if self.duration / dt < 4:
+            import warnings
+            warnings.warn(
+                f"Sampling step dt={dt:.2e} s results in very few points ({int(np.round(self.duration / dt)) + 1}) "
+                f"for pulse duration {self.duration:.2e} s. Waveform may be under-sampled.",
+                UserWarning,
+                stacklevel=3,
+            )
+        return dt
 
     @abstractmethod
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -71,13 +125,13 @@ class Pulse(ABC):
 
     def sample(
         self,
-        dt: float = 1e-9,
+        dt: Optional[float] = None,
         alpha: Optional[float] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Sample the complex baseband waveform Omega(t) = I(t) + i*Q(t).
 
         Args:
-            dt: Sampling interval in seconds (default 1e-9 s = 1 ns).
+            dt: Sampling interval in seconds. If None, automatically chosen adaptively.
             alpha: Reference anharmonicity in Hz for DRAG quadrature scaling. If None,
                 uses self.alpha (or defaults to -250.0e6 Hz if self.alpha is None).
 
@@ -85,7 +139,8 @@ class Pulse(ABC):
             t: 1D numpy array of sample times [0, dt, 2*dt, ..., duration] in seconds.
             c_wave: 1D complex numpy array of sampled pulse values.
         """
-        n_samples = max(int(np.round(self.duration / dt)) + 1, 2)
+        eff_dt = self._resolve_dt(dt, default_points=200, max_dt=1e-9)
+        n_samples = max(int(np.round(self.duration / eff_dt)) + 1, 2)
         t = np.linspace(0, self.duration, n_samples, endpoint=True)
 
         env = self.envelope(t)
@@ -97,7 +152,7 @@ class Pulse(ABC):
                 drag_scale = -self.drag / (2.0 * np.pi * eff_alpha)
             else:
                 drag_scale = 0.0
-            d_env = self.envelope_derivative(t, dt=min(dt * 0.1, self.duration * 1e-3))
+            d_env = self.envelope_derivative(t, dt=min(eff_dt * 0.1, self.duration * 1e-3))
             q_wave = self.amp * drag_scale * d_env
         else:
             q_wave = np.zeros_like(i_wave)
@@ -116,14 +171,14 @@ class Pulse(ABC):
 
     def fft(
         self,
-        dt: float = 1e-10,
+        dt: Optional[float] = None,
         pad_factor: int = 4,
         window: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute the Fast Fourier Transform (FFT) and Power Spectral Density (PSD).
 
         Args:
-            dt: Sampling time step in seconds (default 1e-10 s = 0.1 ns).
+            dt: Sampling time step in seconds. If None, defaults to adaptive high resolution (<= 1e-10 s).
             pad_factor: Zero-padding multiplier to improve spectral frequency resolution.
             window: Whether to apply a Hann window prior to FFT (default False).
 
@@ -132,7 +187,8 @@ class Pulse(ABC):
             spec: Complex frequency spectrum.
             psd_dB: Normalized Power Spectral Density in dB (peak at 0 dB).
         """
-        t, c_wave = self.sample(dt=dt)
+        eff_dt = self._resolve_dt(dt, default_points=400, max_dt=1e-10)
+        t, c_wave = self.sample(dt=eff_dt)
         n = len(c_wave)
         n_fft = int(n * pad_factor)
 
@@ -144,8 +200,8 @@ class Pulse(ABC):
         start_idx = (n_fft - n) // 2
         padded_wave[start_idx : start_idx + n] = c_wave
 
-        spec = np.fft.fftshift(np.fft.fft(padded_wave) * dt)
-        freqs = np.fft.fftshift(np.fft.fftfreq(n_fft, d=dt))  # in Hz (since dt is in s)
+        spec = np.fft.fftshift(np.fft.fft(padded_wave) * eff_dt)
+        freqs = np.fft.fftshift(np.fft.fftfreq(n_fft, d=eff_dt))  # in Hz (since eff_dt is in s)
 
         # PSD in dB
         magnitude_sq = np.abs(spec) ** 2
@@ -158,7 +214,7 @@ class Pulse(ABC):
 
         return freqs, spec, psd_dB
 
-    def spectral_bandwidth(self, dt: float = 1e-10, threshold_dB: float = -3.0) -> float:
+    def spectral_bandwidth(self, dt: Optional[float] = None, threshold_dB: float = -3.0) -> float:
         """Calculate the frequency bandwidth (e.g. -3 dB FWHM) in Hz."""
         freqs, _, psd_dB = self.fft(dt=dt)
         mask = psd_dB >= threshold_dB
@@ -168,7 +224,7 @@ class Pulse(ABC):
 
     def plot_time(
         self,
-        dt: float = 5e-10,
+        dt: Optional[float] = None,
         ax: Optional[plt.Axes] = None,
         show_envelope: bool = True,
         title: Optional[str] = None,
@@ -193,7 +249,7 @@ class Pulse(ABC):
 
     def plot_freq(
         self,
-        dt: float = 1e-10,
+        dt: Optional[float] = None,
         freq_range: Optional[Tuple[float, float]] = None,
         ax: Optional[plt.Axes] = None,
         log_scale: bool = True,
@@ -202,7 +258,7 @@ class Pulse(ABC):
         """Plot the pulse spectrum in the frequency domain.
 
         Args:
-            dt: Sampling step in seconds.
+            dt: Sampling step in seconds. If None, auto-selected.
             freq_range: Tuple of (min_freq, max_freq) in Hz. Defaults to auto.
             ax: Optional matplotlib axes.
             log_scale: If True, plot in dB; otherwise linear magnitude.
@@ -242,7 +298,7 @@ class Pulse(ABC):
     def plot(
         self,
         domain: str = "both",
-        dt: float = 5e-10,
+        dt: Optional[float] = None,
         freq_range: Optional[Tuple[float, float]] = None,
         figsize: Optional[Tuple[int, int]] = None,
     ) -> plt.Figure:
@@ -250,7 +306,7 @@ class Pulse(ABC):
 
         Args:
             domain: 'time', 'freq', or 'both'.
-            dt: Time sampling in seconds.
+            dt: Time sampling in seconds. If None, auto-selected.
             freq_range: Optional (f_min, f_max) in Hz for frequency plot.
             figsize: Figure size.
         """

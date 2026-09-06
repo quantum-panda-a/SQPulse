@@ -118,13 +118,13 @@ class PulseSequence:
 
     def sample(
         self,
-        dt: float = 1e-9,
+        dt: Optional[float] = 1e-9,
         alpha: Optional[float] = None,
     ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         """Sample all channels onto a uniform time grid.
 
         Args:
-            dt: Sample time step in seconds (default 1e-9 s = 1 ns).
+            dt: Sample time step in seconds (default 1e-9 s = 1 ns). If None, chosen adaptively.
             alpha: Optional reference anharmonicity in Hz passed to pulses for DRAG scaling.
 
         Returns:
@@ -134,6 +134,20 @@ class PulseSequence:
         total_time = self.duration
         if total_time <= 0:
             return np.array([0.0]), {ch: np.array([0.0 + 0j]) for ch in self.channels}
+
+        if dt is not None:
+            dt = float(dt)
+            if dt <= 0:
+                raise ValueError(f"Sampling step dt must be positive, got {dt} s")
+            if dt >= total_time:
+                hint = ""
+                if dt > 1e-3 and total_time < 1e-3:
+                    hint = f" Did you mean dt={dt}e-9 s ({dt} ns)? All time parameters in SQPulse are strictly in SI units (seconds)."
+                raise ValueError(
+                    f"Sampling interval dt={dt} s cannot be greater than or equal to total sequence duration={total_time} s.{hint}"
+                )
+        else:
+            dt = min(total_time / 200, 1e-9)
 
         n_pts = int(np.round(total_time / dt)) + 1
         times = np.linspace(0, total_time, n_pts, endpoint=True)
@@ -155,7 +169,7 @@ class PulseSequence:
     def to_qutip_evo(
         self,
         transmon,
-        dt: float = 5e-10,
+        dt: Optional[float] = 5e-10,
         f_d: Optional[float] = None,
     ) -> Tuple[np.ndarray, qutip.QobjEvo]:
         """Compile this sequence for a given Transmon into a QuTiP QobjEvo time-dependent Hamiltonian.
@@ -169,7 +183,8 @@ class PulseSequence:
             times: 1D array of times in seconds.
             evo: QuTiP QobjEvo time-dependent Hamiltonian.
         """
-        times, waveforms = self.sample(dt=dt, alpha=transmon.alpha)
+        eff_dt = dt if dt is not None else min(self.duration / 400, 5e-10)
+        times, waveforms = self.sample(dt=eff_dt, alpha=transmon.alpha)
         drive_ch = transmon.drive
 
         if drive_ch in waveforms:
@@ -192,12 +207,13 @@ class PulseSequence:
 
     def plot(
         self,
-        dt: float = 5e-10,
+        dt: Optional[float] = None,
         figsize: Optional[Tuple[int, int]] = None,
         title: Optional[str] = None,
     ) -> plt.Figure:
         """Plot multi-channel pulse schedule in time domain."""
-        times, waveforms = self.sample(dt=dt)
+        eff_dt = dt if dt is not None else (min(self.duration / 200, 5e-10) if self.duration > 0 else 5e-10)
+        times, waveforms = self.sample(dt=eff_dt)
         channels = self.channels
 
         if not channels:

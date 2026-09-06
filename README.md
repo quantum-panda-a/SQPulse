@@ -12,13 +12,25 @@
 - **角频率与哈密顿量 (Hamiltonian / Angular Frequency)**：$\text{rad/s}$（符合 $\hbar = 1$ 标准量子约定）；
 - **寿命与退相时间 ($T_1, T_2, T_\phi$)**：秒（$\text{s}$），衰减速率量纲为 $\text{s}^{-1}$。
 
+> [!TIP]
+> **推荐使用内置物理单位常量**：
+> SQPulse 提供了清晰易读的单位常量，可直接导入乘用，彻底避免将纳秒误写为秒：
+> ```python
+> from sqpulse import ns, us, ms, Hz, MHz, GHz
+> 
+> # 40 ns 脉冲，平顶过渡 8 ns
+> p = FlatTopPulse(duration=40 * ns, ramp_time=8 * ns)
+> ```
+
 ---
 
 ## 核心特性
 
 1. **丰富的脉冲波形与时频域双重视角**：
    - 支持高斯脉冲 (`GaussianPulse`)、升余弦脉冲 (`CosinePulse` / Hann 窗)、柯西-洛伦兹脉冲 (`LorentzianPulse`)、理想方波 (`SquarePulse`)、平顶平滑脉冲 (`FlatTopPulse`)、双曲正割脉冲 (`SechPulse`)、DRAG 导数修正脉冲 (`DRAGPulse`) 及任意自定义波形 (`CustomPulse`)。
-   - 内置一键式时域与频域双联可视化 (`pulse.plot(domain="both")`)，轻松分析脉冲频谱、半高全宽（FWHM）、谱泄露（Spectral Leakage）与旁瓣衰减。
+   - 提供同名小写函数式快捷工厂（如 `gaussian_pulse(...)`, `flattop_pulse(...)`），并支持 `length` 作为 `duration` 的参数别名。
+   - 内置智能自适应高分辨率采样，一键式时频双域可视化 (`pulse.plot(domain="both")`)，轻松分析脉冲频谱、半高全宽（FWHM）、谱泄露（Spectral Leakage）与旁瓣衰减。
+   - 内置严格的物理量纲与采样步长防错校验，拦截常见的采样步长/参数时间尺度混淆并给出智能修复建议。
 
 2. **严谨的受驱动 Transmon 物理模型**：
    - 支持多能级截断 ($d \ge 2$)，准确刻画更高能级态 $|2\rangle$ 的弱跃迁与泄露。
@@ -46,21 +58,24 @@
 
 ```python
 import matplotlib.pyplot as plt
-from sqpulse import GaussianPulse, CosinePulse, SquarePulse, DRAGPulse, compare_pulses
+from sqpulse import GaussianPulse, CosinePulse, SquarePulse, FlatTopPulse, DRAGPulse, compare_pulses, ns, MHz
 
-# 定义一个 40 ns (40e-9 s) 的高斯脉冲
-p_gauss = GaussianPulse(duration=40e-9, amp=1.0, chop=4.0)
+# 定义一个 40 ns 的高斯脉冲 (支持 40e-9 或 40 * ns，支持 length 或 duration)
+p_gauss = GaussianPulse(duration=40 * ns, amp=1.0, chop=4.0)
+
+# 定义一个平顶脉冲 (40 ns 总时长，8 ns 平滑过渡边沿)
+p_flattop = FlatTopPulse(duration=40 * ns, ramp_time=8 * ns, ramp_type="cosine")
 
 # 定义带有无量纲 DRAG 修正的脉冲 (drag=1.0 为理论最优一阶修正)
-p_drag = DRAGPulse(duration=20e-9, amp=1.0, drag=1.0)
+p_drag = DRAGPulse(duration=20 * ns, amp=1.0, drag=1.0)
 
-# 一键展示时域波形与频域 FFT 功率谱
+# 一键展示时域波形与频域 FFT 功率谱（无需手动计算 dt，内置自适应高分辨率采样）
 p_drag.plot(domain="both")
 plt.show()
 
-# 对比多种波形的抗高频谱泄露性能 (cutoff = 100 MHz = 100e6 Hz)
-p_cos = CosinePulse(duration=40e-9, amp=1.0)
-p_sq = SquarePulse(duration=40e-9, amp=1.0)
+# 对比多种波形的抗高频谱泄露性能 (cutoff = 100 MHz = 100 * MHz)
+p_cos = CosinePulse(duration=40 * ns, amp=1.0)
+p_sq = SquarePulse(duration=40 * ns, amp=1.0)
 compare_pulses([p_gauss, p_cos, p_sq], domain="both")
 plt.show()
 ```
@@ -72,13 +87,15 @@ import matplotlib.pyplot as plt
 from sqpulse import Transmon, PulseSequence, GaussianPulse, Simulator
 
 # 1. 定义 Transmon (5.0 GHz = 5e9 Hz, 非谐性 -250 MHz = -250e6 Hz, T1 = 25 us = 25e-6 s)
+# 物理驱动耦合 omega_d 默认 2*pi*50 MHz (rad/s)，也可由芯片电路参数自动推导：
+# q = Transmon.from_circuit(name="q0", c_d=5e-17, c_g=70e-15, f_q=5e9, attenuation_dB=-60.0)
 q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, levels=3, t1=25.0e-6, t2=18.0e-6)
 
-# 2. 编排脉冲序列 (时间单位均为秒 s)
+# 2. 编排脉冲序列 (amp 为 AWG 归一化幅度 V_0 in [-1, 1]，时间单位均为秒 s)
 seq = PulseSequence(name="xy_drive")
-seq.add(q.drive, GaussianPulse(duration=30e-9, amp=8.0e7))
+seq.add(q.drive, GaussianPulse(duration=30e-9, amp=0.5))
 seq.delay(q.drive, 20e-9)
-seq.add(q.drive, GaussianPulse(duration=30e-9, amp=8.0e7, phase=1.5708)) # 绕 Y 轴驱动
+seq.add(q.drive, GaussianPulse(duration=30e-9, amp=0.5, phase=1.5708)) # 绕 Y 轴驱动
 
 # 3. 绘制时序图
 seq.plot()
@@ -99,9 +116,9 @@ from sqpulse import Transmon, GaussianPulse, RabiExperiment, T1Experiment, Ramse
 
 q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, t1=20.0e-6, t2=15.0e-6)
 
-# 3.1 振幅 Rabi 标定 pi 脉冲幅度 (单位: rad/s)
+# 3.1 振幅 Rabi 标定 pi 脉冲 AWG 输出幅度 V_0
 rabi_res = RabiExperiment.amplitude_rabi(q, pulse_type=GaussianPulse, duration=40e-9)
-print(f"标定得到的 pi 脉冲幅度: {rabi_res.amp_pi:.3e} rad/s")
+print(f"标定得到的 pi 脉冲幅度 V_0: {rabi_res.amp_pi:.3f}")
 rabi_res.plot()
 plt.show()
 

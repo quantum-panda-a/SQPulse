@@ -13,18 +13,16 @@ def test_amplitude_rabi_calibration():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=3)
     duration = 30e-9  # 30 ns in s
 
-    # Perform Amplitude Rabi sweep in rad/s
-    amps = np.linspace(0.0, 2.5e8, 25)
+    # Perform Amplitude Rabi sweep in normalized AWG amplitude V_0 in [0, 1.0]
     rabi_res = RabiExperiment.amplitude_rabi(
         q,
         pulse_type=GaussianPulse,
         duration=duration,
-        amps=amps,
         dt=5e-10,
     )
 
     amp_pi = rabi_res.amp_pi
-    assert 0.5e8 < amp_pi < 2.2e8
+    assert 0.4 < amp_pi < 0.8
 
     # Verify that applying amp_pi achieves state inversion (P1 ~ 1.0)
     pi_pulse = GaussianPulse(duration=duration, amp=amp_pi)
@@ -38,9 +36,9 @@ def test_t1_experiment():
     target_t1 = 3.0e-6  # 3 us in s
     q = Transmon("q0", f_q=5.0e9, levels=2, t1=target_t1)
 
-    # Use square pi pulse: duration 20ns, amp = pi / 20ns (in rad/s)
+    # Use square pi pulse: duration 20ns, amp = 0.5 (normalized V_0)
     duration = 20e-9
-    pi_pulse = SquarePulse(duration=duration, amp=np.pi / duration)
+    pi_pulse = SquarePulse(duration=duration, amp=0.5)
 
     delays = np.linspace(0.0, 6.0e-6, 15)
     t1_res = T1Experiment.run(q, pi_pulse, delays=delays, dt=1e-9)
@@ -54,9 +52,9 @@ def test_ramsey_experiment():
     detuning = 2.0e6  # 2 MHz in Hz
     q = Transmon("q0", f_q=5.0e9, levels=2, t1=10.0e-6, t2=target_t2)
 
-    # pi/2 pulse: duration 20ns, amp = (pi/2) / 20ns (in rad/s)
+    # pi/2 pulse: duration 20ns, amp = 0.25 (normalized V_0)
     duration = 20e-9
-    pi_half_pulse = SquarePulse(duration=duration, amp=0.5 * np.pi / duration)
+    pi_half_pulse = SquarePulse(duration=duration, amp=0.25)
 
     delays = np.linspace(0.0, 2.5e-6, 35)
     ramsey_res = RamseyExperiment.run(

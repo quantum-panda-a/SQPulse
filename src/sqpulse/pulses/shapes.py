@@ -23,11 +23,12 @@ class GaussianPulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         sigma: Optional[float] = None,
         chop: float = 4.0,
@@ -36,6 +37,7 @@ class GaussianPulse(Pulse):
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -45,9 +47,23 @@ class GaussianPulse(Pulse):
             drag=drag,
             alpha=alpha,
             name=name,
+            length=length,
         )
         self.chop = float(chop)
-        self.sigma = float(sigma) if sigma is not None else float(duration) / self.chop
+        if sigma is not None:
+            sigma = float(sigma)
+            if sigma <= 0:
+                raise ValueError(f"sigma must be positive, got {sigma} s")
+            if sigma > self.duration:
+                hint = ""
+                if sigma > 1e-3 and self.duration < 1e-3:
+                    hint = f" Did you mean sigma={sigma}e-9 s ({sigma} ns)? All time parameters in SQPulse are in SI units (seconds)."
+                raise ValueError(
+                    f"Gaussian standard deviation sigma ({sigma} s) cannot exceed pulse duration ({self.duration} s).{hint}"
+                )
+            self.sigma = sigma
+        else:
+            self.sigma = self.duration / self.chop
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         tc = self.duration / 2.0
@@ -78,17 +94,19 @@ class CosinePulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         drag: float = 0.0,
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -98,6 +116,7 @@ class CosinePulse(Pulse):
             drag=drag,
             alpha=alpha,
             name=name,
+            length=length,
         )
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -122,11 +141,12 @@ class LorentzianPulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         gamma: Optional[float] = None,
         drag: float = 0.0,
@@ -134,6 +154,7 @@ class LorentzianPulse(Pulse):
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -143,8 +164,22 @@ class LorentzianPulse(Pulse):
             drag=drag,
             alpha=alpha,
             name=name,
+            length=length,
         )
-        self.gamma = float(gamma) if gamma is not None else float(duration) / 4.0
+        if gamma is not None:
+            gamma = float(gamma)
+            if gamma <= 0:
+                raise ValueError(f"gamma must be positive, got {gamma} s")
+            if gamma > 2.0 * self.duration:
+                hint = ""
+                if gamma > 1e-3 and self.duration < 1e-3:
+                    hint = f" Did you mean gamma={gamma}e-9 s ({gamma} ns)? All time parameters in SQPulse are in SI units (seconds)."
+                raise ValueError(
+                    f"Lorentzian linewidth gamma ({gamma} s) is unusually large compared to pulse duration ({self.duration} s).{hint}"
+                )
+            self.gamma = gamma
+        else:
+            self.gamma = self.duration / 4.0
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         tc = self.duration / 2.0
@@ -173,15 +208,17 @@ class SquarePulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -191,6 +228,7 @@ class SquarePulse(Pulse):
             drag=0.0,
             alpha=None,
             name=name,
+            length=length,
         )
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -215,11 +253,12 @@ class FlatTopPulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         ramp_time: Optional[float] = None,
         ramp_type: str = "cosine",
@@ -228,6 +267,7 @@ class FlatTopPulse(Pulse):
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -237,14 +277,24 @@ class FlatTopPulse(Pulse):
             drag=drag,
             alpha=alpha,
             name=name,
+            length=length,
         )
         self.ramp_type = ramp_type.lower()
         if ramp_time is None:
-            self.ramp_time = duration / 4.0
+            self.ramp_time = self.duration / 4.0
         else:
-            if 2 * ramp_time > duration:
-                raise ValueError(f"2 * ramp_time ({2*ramp_time} s) cannot exceed duration ({duration} s)")
-            self.ramp_time = float(ramp_time)
+            ramp_time = float(ramp_time)
+            if ramp_time < 0:
+                raise ValueError(f"ramp_time must be non-negative, got {ramp_time} s")
+            if 2 * ramp_time > self.duration:
+                hint = ""
+                if ramp_time > 1e-3 and self.duration < 1e-3:
+                    hint = f" Note: ramp_time={ramp_time} s appears to be in nanoseconds. Did you mean ramp_time={ramp_time}e-9 s ({ramp_time} ns)?"
+                raise ValueError(
+                    f"2 * ramp_time ({2 * ramp_time} s) cannot exceed duration ({self.duration} s). "
+                    f"All time parameters in SQPulse are in SI units (seconds).{hint}"
+                )
+            self.ramp_time = ramp_time
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         t = np.asarray(t)
@@ -290,11 +340,12 @@ class SechPulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         sigma: Optional[float] = None,
         chop: float = 4.0,
@@ -303,6 +354,7 @@ class SechPulse(Pulse):
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -312,9 +364,23 @@ class SechPulse(Pulse):
             drag=drag,
             alpha=alpha,
             name=name,
+            length=length,
         )
         self.chop = float(chop)
-        self.sigma = float(sigma) if sigma is not None else float(duration) / self.chop
+        if sigma is not None:
+            sigma = float(sigma)
+            if sigma <= 0:
+                raise ValueError(f"sigma must be positive, got {sigma} s")
+            if sigma > self.duration:
+                hint = ""
+                if sigma > 1e-3 and self.duration < 1e-3:
+                    hint = f" Did you mean sigma={sigma}e-9 s ({sigma} ns)? All time parameters in SQPulse are in SI units (seconds)."
+                raise ValueError(
+                    f"Sech characteristic width sigma ({sigma} s) cannot exceed pulse duration ({self.duration} s).{hint}"
+                )
+            self.sigma = sigma
+        else:
+            self.sigma = self.duration / self.chop
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         tc = self.duration / 2.0
@@ -344,18 +410,20 @@ class CustomPulse(Pulse):
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
     """
 
     def __init__(
         self,
-        duration: float,
-        envelope_fn: Callable[[np.ndarray], np.ndarray],
+        duration: Optional[float] = None,
+        envelope_fn: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         amp: float = 1.0,
         drag: float = 0.0,
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -365,7 +433,10 @@ class CustomPulse(Pulse):
             drag=drag,
             alpha=alpha,
             name=name,
+            length=length,
         )
+        if envelope_fn is None:
+            raise ValueError("envelope_fn must be provided for CustomPulse")
         self._fn = envelope_fn
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -382,7 +453,7 @@ class DRAGPulse(GaussianPulse):
 
     def __init__(
         self,
-        duration: float,
+        duration: Optional[float] = None,
         amp: float = 1.0,
         sigma: Optional[float] = None,
         drag: float = 1.0,
@@ -390,6 +461,7 @@ class DRAGPulse(GaussianPulse):
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
+        length: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -400,6 +472,7 @@ class DRAGPulse(GaussianPulse):
             phase=phase,
             detune=detune,
             name=name or "DRAGPulse",
+            length=length,
         )
 
 
@@ -423,3 +496,202 @@ class ScaledPulse(Pulse):
 
     def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         return self.base_pulse.envelope_derivative(t, dt=dt)
+
+
+# Functional pulse factory wrappers
+def gaussian_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    sigma: Optional[float] = None,
+    chop: float = 4.0,
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> GaussianPulse:
+    """Create a Gaussian pulse."""
+    return GaussianPulse(
+        duration=duration,
+        amp=amp,
+        sigma=sigma,
+        chop=chop,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def cosine_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> CosinePulse:
+    """Create a raised-cosine / Hann pulse."""
+    return CosinePulse(
+        duration=duration,
+        amp=amp,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def lorentzian_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    gamma: Optional[float] = None,
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> LorentzianPulse:
+    """Create a Cauchy-Lorentzian pulse."""
+    return LorentzianPulse(
+        duration=duration,
+        amp=amp,
+        gamma=gamma,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def square_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> SquarePulse:
+    """Create an ideal rectangular / square pulse."""
+    return SquarePulse(
+        duration=duration,
+        amp=amp,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def flattop_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    ramp_time: Optional[float] = None,
+    ramp_type: str = "cosine",
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> FlatTopPulse:
+    """Create a flat-top pulse with smooth ramp-up and ramp-down edges."""
+    return FlatTopPulse(
+        duration=duration,
+        amp=amp,
+        ramp_time=ramp_time,
+        ramp_type=ramp_type,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def sech_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    sigma: Optional[float] = None,
+    chop: float = 4.0,
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> SechPulse:
+    """Create a hyperbolic secant (Sech) pulse."""
+    return SechPulse(
+        duration=duration,
+        amp=amp,
+        sigma=sigma,
+        chop=chop,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def drag_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    sigma: Optional[float] = None,
+    drag: float = 1.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> DRAGPulse:
+    """Create a DRAG pulse."""
+    return DRAGPulse(
+        duration=duration,
+        amp=amp,
+        sigma=sigma,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
+
+
+def custom_pulse(
+    duration: Optional[float] = None,
+    envelope_fn: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    amp: float = 1.0,
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> CustomPulse:
+    """Create a custom pulse from an arbitrary envelope function."""
+    return CustomPulse(
+        duration=duration,
+        envelope_fn=envelope_fn,
+        amp=amp,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        name=name,
+        length=length,
+    )
