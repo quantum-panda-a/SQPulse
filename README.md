@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="SQPulse Logo" width="180">
+</p>
+
 # SQPulse: 超导量子脉冲工程与动力学仿真库
 
 **SQPulse** 是一个专为超导量子计算（Transmon Qubit）、微波脉冲工程与含时量子动力学模拟而设计的现代 Python 库，全面遵循**国际单位制（SI Units）**，提供了直观、模块化和显式调用的 API。
