@@ -10,6 +10,7 @@ from sqpulse.pulses import (
     FlatTopPulse,
     SechPulse,
     CustomPulse,
+    DRAGPulse,
     spectral_leakage,
 )
 
@@ -52,9 +53,9 @@ def test_flattop_pulse():
 
 
 def test_drag_quadrature():
-    """DRAG should introduce non-zero Q proportional to derivative."""
+    """DRAG should introduce non-zero Q proportional to derivative using dimensionless beta."""
     p_no_drag = GaussianPulse(duration=40e-9, amp=1.0, drag=0.0)
-    p_drag = GaussianPulse(duration=40e-9, amp=1.0, drag=0.5)
+    p_drag = GaussianPulse(duration=40e-9, amp=1.0, drag=1.0)
 
     _, wave_no_drag = p_no_drag.sample(dt=5e-10)
     _, wave_drag = p_drag.sample(dt=5e-10)
@@ -64,6 +65,29 @@ def test_drag_quadrature():
     # The derivative of symmetric Gaussian is odd, so Q at center should be 0
     mid_idx = len(wave_drag) // 2
     assert np.isclose(wave_drag.imag[mid_idx], 0.0, atol=1e-4)
+
+
+def test_drag_dimensionless_properties():
+    """Verify dimensionless DRAG linearity, default beta=1.0 in DRAGPulse, and alpha scaling."""
+    # 1. Linearity: drag=2.0 should produce exactly 2x the Q quadrature of drag=1.0
+    p1 = GaussianPulse(duration=40e-9, amp=1.0, drag=1.0)
+    p2 = GaussianPulse(duration=40e-9, amp=1.0, drag=2.0)
+    _, w1 = p1.sample(dt=5e-10)
+    _, w2 = p2.sample(dt=5e-10)
+    assert np.allclose(w2.imag, 2.0 * w1.imag)
+
+    # 2. DRAGPulse default has drag=1.0
+    p_drag_class = DRAGPulse(duration=40e-9, amp=1.0)
+    assert p_drag_class.drag == 1.0
+    _, w_drag_class = p_drag_class.sample(dt=5e-10)
+    assert np.allclose(w_drag_class.imag, w1.imag)
+
+    # 3. Alpha scaling: doubling alpha (e.g. -500 MHz vs -250 MHz) halves the Q quadrature
+    p_alpha1 = GaussianPulse(duration=40e-9, amp=1.0, drag=1.0, alpha=-250.0e6)
+    p_alpha2 = GaussianPulse(duration=40e-9, amp=1.0, drag=1.0, alpha=-500.0e6)
+    _, wa1 = p_alpha1.sample(dt=5e-10)
+    _, wa2 = p_alpha2.sample(dt=5e-10)
+    assert np.allclose(wa2.imag, 0.5 * wa1.imag)
 
 
 def test_pulse_fft_and_spectral_leakage():

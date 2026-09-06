@@ -31,3 +31,29 @@ def test_resonant_rabi_flip():
     x, y, z = res.bloch_vector()
     assert np.isclose(z[0], 1.0, atol=1e-3)
     assert np.isclose(z[-1], -1.0, atol=1e-3)
+
+
+def test_drag_leakage_suppression():
+    """Verify that a dimensionless DRAG pulse (drag=1.0) suppresses leakage to |2> by orders of magnitude."""
+    from sqpulse.pulses import GaussianPulse, DRAGPulse
+
+    q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, levels=3)
+    duration = 10e-9
+    amp_pi = 5.0e8
+
+    # Pulse without DRAG
+    p_nodrag = GaussianPulse(duration=duration, amp=amp_pi, drag=0.0)
+    seq_nodrag = PulseSequence().add(q.drive, p_nodrag)
+    res_nodrag = Simulator.run(q, seq_nodrag, dt=5e-11)
+    leakage_nodrag = res_nodrag.final_population(2)
+
+    # Pulse with dimensionless DRAG beta=1.0
+    p_drag = DRAGPulse(duration=duration, amp=amp_pi, drag=1.0)
+    seq_drag = PulseSequence().add(q.drive, p_drag)
+    res_drag = Simulator.run(q, seq_drag, dt=5e-11)
+    leakage_drag = res_drag.final_population(2)
+
+    # DRAG should suppress leakage to |2> by at least a factor of 100
+    assert leakage_nodrag > 1e-4
+    assert leakage_drag < 1e-5
+    assert (leakage_nodrag / leakage_drag) > 50.0

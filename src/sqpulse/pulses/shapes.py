@@ -18,7 +18,8 @@ class GaussianPulse(Pulse):
         amp (float): Pulse amplitude (rad/s or normalized).
         sigma (Optional[float]): Standard deviation in seconds (s). If None, set to duration / chop.
         chop (float): Ratio of duration / sigma (default: 4.0).
-        drag (float): DRAG coefficient for Q quadrature.
+        drag (float): Dimensionless DRAG coefficient beta (default: 0.0).
+        alpha (Optional[float]): Anharmonicity in Hz for DRAG quadrature scaling.
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
@@ -31,11 +32,20 @@ class GaussianPulse(Pulse):
         sigma: Optional[float] = None,
         chop: float = 4.0,
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            name=name,
+        )
         self.chop = float(chop)
         self.sigma = float(sigma) if sigma is not None else float(duration) / self.chop
 
@@ -75,11 +85,20 @@ class CosinePulse(Pulse):
         duration: float,
         amp: float = 1.0,
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            name=name,
+        )
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         return 0.5 * (1.0 - np.cos(2.0 * np.pi * t / self.duration))
@@ -98,7 +117,8 @@ class LorentzianPulse(Pulse):
         duration (float): Pulse duration in seconds (s).
         amp (float): Pulse amplitude.
         gamma (Optional[float]): Full width at half maximum (FWHM) in seconds (s). Defaults to duration / 4.
-        drag (float): DRAG coefficient.
+        drag (float): Dimensionless DRAG coefficient beta.
+        alpha (Optional[float]): Anharmonicity in Hz for DRAG quadrature scaling.
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
@@ -110,11 +130,20 @@ class LorentzianPulse(Pulse):
         amp: float = 1.0,
         gamma: Optional[float] = None,
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            name=name,
+        )
         self.gamma = float(gamma) if gamma is not None else float(duration) / 4.0
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -154,7 +183,15 @@ class SquarePulse(Pulse):
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=0.0, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=0.0,
+            alpha=None,
+            name=name,
+        )
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         return np.ones_like(t, dtype=float)
@@ -173,7 +210,8 @@ class FlatTopPulse(Pulse):
         amp (float): Pulse amplitude during flat region.
         ramp_time (Optional[float]): Duration of ramp-up and ramp-down in seconds (s). Defaults to duration / 4.
         ramp_type (str): 'cosine' (Hann edge) or 'gaussian'.
-        drag (float): DRAG coefficient.
+        drag (float): Dimensionless DRAG coefficient beta.
+        alpha (Optional[float]): Anharmonicity in Hz for DRAG quadrature scaling.
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
@@ -186,11 +224,20 @@ class FlatTopPulse(Pulse):
         ramp_time: Optional[float] = None,
         ramp_type: str = "cosine",
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            name=name,
+        )
         self.ramp_type = ramp_type.lower()
         if ramp_time is None:
             self.ramp_time = duration / 4.0
@@ -252,11 +299,20 @@ class SechPulse(Pulse):
         sigma: Optional[float] = None,
         chop: float = 4.0,
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            name=name,
+        )
         self.chop = float(chop)
         self.sigma = float(sigma) if sigma is not None else float(duration) / self.chop
 
@@ -283,7 +339,8 @@ class CustomPulse(Pulse):
         duration (float): Pulse duration in seconds (s).
         envelope_fn (Callable[[np.ndarray], np.ndarray]): Function taking time array (s) and returning [0, 1] envelope.
         amp (float): Amplitude.
-        drag (float): DRAG coefficient.
+        drag (float): Dimensionless DRAG coefficient beta.
+        alpha (Optional[float]): Anharmonicity in Hz for DRAG quadrature scaling.
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
@@ -295,11 +352,20 @@ class CustomPulse(Pulse):
         envelope_fn: Callable[[np.ndarray], np.ndarray],
         amp: float = 1.0,
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
     ):
-        super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            name=name,
+        )
         self._fn = envelope_fn
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -309,8 +375,9 @@ class CustomPulse(Pulse):
 class DRAGPulse(GaussianPulse):
     """Derivative Removal by Adiabatic Gate (DRAG) pulse.
 
-    Convenience subclass of GaussianPulse with DRAG coefficient specifically set,
-    typically beta = -1 / anharmonicity.
+    Convenience subclass of GaussianPulse with dimensionless DRAG coefficient beta.
+    A value of drag=1.0 corresponds to the ideal first-order theoretical DRAG correction:
+        Q(t) = - (drag / (2 * pi * alpha)) * dI/dt
     """
 
     def __init__(
@@ -318,7 +385,8 @@ class DRAGPulse(GaussianPulse):
         duration: float,
         amp: float = 1.0,
         sigma: Optional[float] = None,
-        drag: float = 0.5,
+        drag: float = 1.0,
+        alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
         name: Optional[str] = None,
@@ -328,6 +396,7 @@ class DRAGPulse(GaussianPulse):
             amp=amp,
             sigma=sigma,
             drag=drag,
+            alpha=alpha,
             phase=phase,
             detune=detune,
             name=name or "DRAGPulse",
@@ -344,6 +413,7 @@ class ScaledPulse(Pulse):
             phase=base_pulse.phase,
             detune=base_pulse.detune,
             drag=base_pulse.drag,
+            alpha=base_pulse.alpha,
             name=f"{base_pulse.name}*{scalar:.2f}",
         )
         self.base_pulse = base_pulse

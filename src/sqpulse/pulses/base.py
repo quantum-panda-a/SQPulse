@@ -15,7 +15,9 @@ class Pulse(ABC):
         amp (float): Peak amplitude scaling (arbitrary units or rad/s).
         phase (float): Carrier phase offset in radians.
         detune (float): Frequency detuning offset in Hz (df in exp(-i * 2pi * df * t)).
-        drag (float): DRAG coefficient for imaginary quadrature (Q = drag * dI/dt).
+        drag (float): Dimensionless DRAG scaling factor beta (Q = -drag / (2*pi*alpha) * dI/dt).
+            A value of drag=1.0 corresponds to the ideal first-order DRAG correction.
+        alpha (float, optional): Reference Transmon anharmonicity in Hz (default -250.0e6 Hz).
         name (str): Optional identifier for the pulse.
     """
 
@@ -26,6 +28,7 @@ class Pulse(ABC):
         phase: float = 0.0,
         detune: float = 0.0,
         drag: float = 0.0,
+        alpha: Optional[float] = None,
         name: Optional[str] = None,
     ):
         if duration <= 0:
@@ -35,6 +38,7 @@ class Pulse(ABC):
         self.phase = float(phase)
         self.detune = float(detune)
         self.drag = float(drag)
+        self.alpha = float(alpha) if alpha is not None else None
         self.name = name or self.__class__.__name__
 
     @abstractmethod
@@ -65,11 +69,17 @@ class Pulse(ABC):
         delta_t[delta_t == 0] = 1.0
         return (self.envelope(t_plus) - self.envelope(t_minus)) / delta_t
 
-    def sample(self, dt: float = 1e-9) -> Tuple[np.ndarray, np.ndarray]:
+    def sample(
+        self,
+        dt: float = 1e-9,
+        alpha: Optional[float] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Sample the complex baseband waveform Omega(t) = I(t) + i*Q(t).
 
         Args:
             dt: Sampling interval in seconds (default 1e-9 s = 1 ns).
+            alpha: Reference anharmonicity in Hz for DRAG quadrature scaling. If None,
+                uses self.alpha (or defaults to -250.0e6 Hz if self.alpha is None).
 
         Returns:
             t: 1D numpy array of sample times [0, dt, 2*dt, ..., duration] in seconds.
@@ -82,8 +92,13 @@ class Pulse(ABC):
         i_wave = self.amp * env
 
         if self.drag != 0.0:
+            eff_alpha = self.alpha if self.alpha is not None else (alpha if alpha is not None else -250.0e6)
+            if eff_alpha != 0.0:
+                drag_scale = -self.drag / (2.0 * np.pi * eff_alpha)
+            else:
+                drag_scale = 0.0
             d_env = self.envelope_derivative(t, dt=min(dt * 0.1, self.duration * 1e-3))
-            q_wave = self.amp * self.drag * d_env
+            q_wave = self.amp * drag_scale * d_env
         else:
             q_wave = np.zeros_like(i_wave)
 
@@ -268,5 +283,5 @@ class Pulse(ABC):
         return (
             f"{self.__class__.__name__}(duration={self.duration:.2e}s, "
             f"amp={self.amp:.3e}, phase={self.phase:.2f}, detune={self.detune:.2e}Hz, "
-            f"drag={self.drag:.2e})"
+            f"drag={self.drag:.2f})"
         )

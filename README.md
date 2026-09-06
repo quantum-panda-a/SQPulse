@@ -46,13 +46,16 @@
 
 ```python
 import matplotlib.pyplot as plt
-from sqpulse import GaussianPulse, CosinePulse, SquarePulse, compare_pulses
+from sqpulse import GaussianPulse, CosinePulse, SquarePulse, DRAGPulse, compare_pulses
 
 # 定义一个 40 ns (40e-9 s) 的高斯脉冲
 p_gauss = GaussianPulse(duration=40e-9, amp=1.0, chop=4.0)
 
+# 定义带有无量纲 DRAG 修正的脉冲 (drag=1.0 为理论最优一阶修正)
+p_drag = DRAGPulse(duration=20e-9, amp=1.0, drag=1.0)
+
 # 一键展示时域波形与频域 FFT 功率谱
-p_gauss.plot(domain="both")
+p_drag.plot(domain="both")
 plt.show()
 
 # 对比多种波形的抗高频谱泄露性能 (cutoff = 100 MHz = 100e6 Hz)

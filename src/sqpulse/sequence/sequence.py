@@ -116,11 +116,16 @@ class PulseSequence:
             self._channel_clocks[c] = t_max
         return self
 
-    def sample(self, dt: float = 1e-9) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    def sample(
+        self,
+        dt: float = 1e-9,
+        alpha: Optional[float] = None,
+    ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         """Sample all channels onto a uniform time grid.
 
         Args:
             dt: Sample time step in seconds (default 1e-9 s = 1 ns).
+            alpha: Optional reference anharmonicity in Hz passed to pulses for DRAG scaling.
 
         Returns:
             times: 1D numpy array of time points [0, dt, ..., duration] in seconds.
@@ -137,7 +142,7 @@ class PulseSequence:
         for ch, pulse_list in self._channels.items():
             c_wave = np.zeros(n_pts, dtype=complex)
             for item in pulse_list:
-                p_t, p_wave = item.pulse.sample(dt=dt)
+                p_t, p_wave = item.pulse.sample(dt=dt, alpha=alpha)
                 idx_start = int(np.round(item.t_start / dt))
                 idx_end = min(idx_start + len(p_wave), n_pts)
                 n_copy = idx_end - idx_start
@@ -164,7 +169,7 @@ class PulseSequence:
             times: 1D array of times in seconds.
             evo: QuTiP QobjEvo time-dependent Hamiltonian.
         """
-        times, waveforms = self.sample(dt=dt)
+        times, waveforms = self.sample(dt=dt, alpha=transmon.alpha)
         drive_ch = transmon.drive
 
         if drive_ch in waveforms:
