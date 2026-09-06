@@ -1,4 +1,4 @@
-"""Concrete pulse shapes for SQPulse."""
+"""Concrete pulse shapes for SQPulse in SI units."""
 
 from __future__ import annotations
 from typing import Optional, Callable, Union
@@ -14,13 +14,13 @@ class GaussianPulse(Pulse):
                     {1 - e^{-(\tau/2)^2 / (2\sigma^2)}}
 
     Args:
-        duration (float): Total pulse length in ns.
-        amp (float): Pulse amplitude.
-        sigma (Optional[float]): Standard deviation in ns. If None, set to duration / chop.
+        duration (float): Total pulse length in seconds (s).
+        amp (float): Pulse amplitude (rad/s or normalized).
+        sigma (Optional[float]): Standard deviation in seconds (s). If None, set to duration / chop.
         chop (float): Ratio of duration / sigma (default: 4.0).
         drag (float): DRAG coefficient for Q quadrature.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -45,7 +45,7 @@ class GaussianPulse(Pulse):
         p0 = np.exp(-(tc**2) / (2.0 * self.sigma**2))
         return (p - p0) / (1.0 - p0)
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         tc = self.duration / 2.0
         p = np.exp(-((t - tc) ** 2) / (2.0 * self.sigma**2))
         p0 = np.exp(-(tc**2) / (2.0 * self.sigma**2))
@@ -62,11 +62,11 @@ class CosinePulse(Pulse):
              = \sin^2\left(\frac{\pi t}{\tau}\right)
 
     Args:
-        duration (float): Pulse duration in ns.
+        duration (float): Pulse duration in seconds (s).
         amp (float): Pulse amplitude.
         drag (float): DRAG coefficient.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -84,7 +84,7 @@ class CosinePulse(Pulse):
     def envelope(self, t: np.ndarray) -> np.ndarray:
         return 0.5 * (1.0 - np.cos(2.0 * np.pi * t / self.duration))
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         return (np.pi / self.duration) * np.sin(2.0 * np.pi * t / self.duration)
 
 
@@ -95,12 +95,12 @@ class LorentzianPulse(Pulse):
         f(t) = \frac{1}{1 + \left(\frac{t - \tau/2}{\Gamma / 2}\right)^2}
 
     Args:
-        duration (float): Pulse duration in ns.
+        duration (float): Pulse duration in seconds (s).
         amp (float): Pulse amplitude.
-        gamma (Optional[float]): Full width at half maximum (FWHM) in ns. Defaults to duration / 4.
+        gamma (Optional[float]): Full width at half maximum (FWHM) in seconds (s). Defaults to duration / 4.
         drag (float): DRAG coefficient.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -124,7 +124,7 @@ class LorentzianPulse(Pulse):
         l0 = 1.0 / (1.0 + (tc / hwhm) ** 2)
         return (l_raw - l0) / (1.0 - l0)
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         tc = self.duration / 2.0
         hwhm = self.gamma / 2.0
         denom = 1.0 + ((t - tc) / hwhm) ** 2
@@ -139,10 +139,10 @@ class SquarePulse(Pulse):
     with high spectral sidelobes (-13 dB first sidelobe).
 
     Args:
-        duration (float): Pulse duration in ns.
+        duration (float): Pulse duration in seconds (s).
         amp (float): Pulse amplitude.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -159,7 +159,7 @@ class SquarePulse(Pulse):
     def envelope(self, t: np.ndarray) -> np.ndarray:
         return np.ones_like(t, dtype=float)
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         return np.zeros_like(t, dtype=float)
 
 
@@ -169,13 +169,13 @@ class FlatTopPulse(Pulse):
     Useful for long resonant drives, parametric gates, or readout pulses.
 
     Args:
-        duration (float): Total pulse duration in ns.
+        duration (float): Total pulse duration in seconds (s).
         amp (float): Pulse amplitude during flat region.
-        ramp_time (Optional[float]): Duration of ramp-up and ramp-down in ns. Defaults to duration / 8.
+        ramp_time (Optional[float]): Duration of ramp-up and ramp-down in seconds (s). Defaults to duration / 4.
         ramp_type (str): 'cosine' (Hann edge) or 'gaussian'.
         drag (float): DRAG coefficient.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -193,10 +193,10 @@ class FlatTopPulse(Pulse):
         super().__init__(duration=duration, amp=amp, phase=phase, detune=detune, drag=drag, name=name)
         self.ramp_type = ramp_type.lower()
         if ramp_time is None:
-            self.ramp_time = min(10.0, duration / 4.0)
+            self.ramp_time = duration / 4.0
         else:
             if 2 * ramp_time > duration:
-                raise ValueError(f"2 * ramp_time ({2*ramp_time}) cannot exceed duration ({duration})")
+                raise ValueError(f"2 * ramp_time ({2*ramp_time} s) cannot exceed duration ({duration} s)")
             self.ramp_time = float(ramp_time)
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
@@ -235,13 +235,13 @@ class SechPulse(Pulse):
         f(t) = \text{sech}\left(\frac{t - \tau/2}{\sigma}\right)
 
     Args:
-        duration (float): Pulse duration in ns.
+        duration (float): Pulse duration in seconds (s).
         amp (float): Pulse amplitude.
-        sigma (Optional[float]): Characteristic width in ns.
+        sigma (Optional[float]): Characteristic width in seconds (s).
         chop (float): Ratio of duration / sigma.
         drag (float): DRAG coefficient.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -267,7 +267,7 @@ class SechPulse(Pulse):
         s0 = 1.0 / np.cosh(rho * tc)
         return (s - s0) / (1.0 - s0)
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         tc = self.duration / 2.0
         rho = 1.0 / self.sigma
         arg = rho * (t - tc)
@@ -280,12 +280,12 @@ class CustomPulse(Pulse):
     """Pulse defined by an arbitrary user-supplied envelope function f(t).
 
     Args:
-        duration (float): Pulse duration in ns.
-        envelope_fn (Callable[[np.ndarray], np.ndarray]): Function taking time array and returning [0, 1] envelope.
+        duration (float): Pulse duration in seconds (s).
+        envelope_fn (Callable[[np.ndarray], np.ndarray]): Function taking time array (s) and returning [0, 1] envelope.
         amp (float): Amplitude.
         drag (float): DRAG coefficient.
         phase (float): Phase in radians.
-        detune (float): Detuning in GHz.
+        detune (float): Detuning in Hz.
         name (Optional[str]): Pulse name.
     """
 
@@ -351,5 +351,5 @@ class ScaledPulse(Pulse):
     def envelope(self, t: np.ndarray) -> np.ndarray:
         return self.base_pulse.envelope(t)
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         return self.base_pulse.envelope_derivative(t, dt=dt)

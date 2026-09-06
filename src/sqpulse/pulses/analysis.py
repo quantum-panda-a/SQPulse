@@ -1,4 +1,4 @@
-"""Spectral and time-domain analysis tools for pulses."""
+"""Spectral and time-domain analysis tools for pulses in SI units."""
 
 from __future__ import annotations
 from typing import Dict, List, Tuple, Optional
@@ -10,7 +10,7 @@ from .base import Pulse
 def spectral_leakage(
     pulse: Pulse,
     cutoff_freq: float,
-    dt: float = 0.05,
+    dt: float = 1e-10,
 ) -> float:
     r"""Calculate the ratio of spectral energy lying outside a given cutoff frequency.
 
@@ -19,8 +19,8 @@ def spectral_leakage(
 
     Args:
         pulse: Pulse object to analyze.
-        cutoff_freq: Cutoff frequency in GHz (positive).
-        dt: Sampling time in ns.
+        cutoff_freq: Cutoff frequency in Hz (positive).
+        dt: Sampling time in seconds (s).
 
     Returns:
         Fraction of spectral energy outside [-cutoff_freq, +cutoff_freq] (in [0, 1]).
@@ -39,7 +39,7 @@ def spectral_leakage(
 def compare_pulses(
     pulses: List[Pulse],
     domain: str = "both",
-    dt: float = 0.1,
+    dt: float = 1e-10,
     freq_range: Optional[Tuple[float, float]] = None,
     log_scale: bool = True,
     figsize: Optional[Tuple[int, int]] = None,
@@ -49,8 +49,8 @@ def compare_pulses(
     Args:
         pulses: List of Pulse objects.
         domain: 'time', 'freq', or 'both'.
-        dt: Sampling time in ns.
-        freq_range: Frequency range tuple (f_min, f_max) in GHz.
+        dt: Sampling time in seconds (s).
+        freq_range: Frequency range tuple (f_min, f_max) in Hz.
         log_scale: Whether to plot frequency spectrum in dB.
         figsize: Figure size tuple.
 
@@ -62,7 +62,7 @@ def compare_pulses(
         for p in pulses:
             t, wave = p.sample(dt=dt)
             ax.plot(t, wave.real, lw=2, label=f"{p.name} (I)")
-        ax.set_xlabel("Time (ns)")
+        ax.set_xlabel("Time (s)")
         ax.set_ylabel("Amplitude")
         ax.set_title("Pulse Time-Domain Comparison")
         ax.grid(True, alpha=0.3)
@@ -87,7 +87,7 @@ def compare_pulses(
             ax.set_ylim(0, 1.05)
         if freq_range:
             ax.set_xlim(freq_range)
-        ax.set_xlabel("Frequency (GHz)")
+        ax.set_xlabel("Frequency (Hz)")
         ax.set_title("Pulse Frequency-Domain Comparison")
         ax.grid(True, alpha=0.3)
         ax.legend()
@@ -106,7 +106,7 @@ def compare_pulses(
                 norm_mag = mag / np.max(mag) if np.max(mag) > 0 else mag
                 ax2.plot(freqs, norm_mag, lw=2, label=p.name)
 
-        ax1.set_xlabel("Time (ns)")
+        ax1.set_xlabel("Time (s)")
         ax1.set_ylabel("In-Phase Amplitude (I)")
         ax1.set_title("Time-Domain Envelopes")
         ax1.grid(True, alpha=0.3)
@@ -120,7 +120,7 @@ def compare_pulses(
             ax2.set_ylim(0, 1.05)
         if freq_range:
             ax2.set_xlim(freq_range)
-        ax2.set_xlabel("Frequency (GHz)")
+        ax2.set_xlabel("Frequency (Hz)")
         ax2.set_title("Frequency Spectra (Leakage Comparison)")
         ax2.grid(True, alpha=0.3)
         ax2.legend()

@@ -1,4 +1,4 @@
-"""Transmon qubit physical model for SQPulse."""
+"""Transmon qubit physical model for SQPulse in SI units."""
 
 from __future__ import annotations
 from typing import List, Optional, Tuple
@@ -7,23 +7,23 @@ import qutip
 
 
 class Transmon:
-    r"""Physical model of a multi-level Transmon qubit.
+    r"""Physical model of a multi-level Transmon qubit in SI units.
 
-    The Hamiltonian in the rotating frame of reference (carrier frequency f_d) is:
+    The Hamiltonian in the rotating frame of reference (carrier frequency f_d in Hz) is:
     .. math::
-        H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2
+        H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2 \quad (\text{rad/s})
 
     The time-dependent drive Hamiltonian (under RWA) is:
     .. math::
-        H_d(t) = \frac{1}{2} \Omega_x(t) (a + a^\dagger) + \frac{1}{2} \Omega_y(t) i(a^\dagger - a)
+        H_d(t) = \frac{1}{2} \Omega_x(t) (a + a^\dagger) + \frac{1}{2} \Omega_y(t) i(a^\dagger - a) \quad (\text{rad/s})
 
     Args:
         name (str): Unique name of this transmon (e.g. 'q0').
-        f_q (float): Qubit 0-1 transition frequency in GHz (e.g. 5.0).
-        alpha (float): Anharmonicity in GHz (typically negative, e.g. -0.25 for -250 MHz).
+        f_q (float): Qubit 0-1 transition frequency in Hz (e.g. 5.0e9 for 5 GHz).
+        alpha (float): Anharmonicity in Hz (typically negative, e.g. -250e6 for -250 MHz).
         levels (int): Number of Hilbert space levels to model (default 3: |0>, |1>, |2>).
-        t1 (float): Energy relaxation time T1 in ns (default inf).
-        t2 (float): Dephasing time T2 in ns (default inf).
+        t1 (float): Energy relaxation time T1 in seconds (default inf).
+        t2 (float): Dephasing time T2 in seconds (default inf).
         thermal_population (float): Excited state thermal occupation n_th (default 0.0).
         drive_coupling (float): Relative drive coupling efficiency (default 1.0).
     """
@@ -31,8 +31,8 @@ class Transmon:
     def __init__(
         self,
         name: str = "q0",
-        f_q: float = 5.0,
-        alpha: float = -0.25,
+        f_q: float = 5.0e9,
+        alpha: float = -250.0e6,
         levels: int = 3,
         t1: float = np.inf,
         t2: float = np.inf,
@@ -131,12 +131,12 @@ class Transmon:
         return ket * ket.dag()
 
     def H0(self, f_d: Optional[float] = None) -> qutip.Qobj:
-        r"""Compute static Hamiltonian in the frame rotating at frequency f_d.
+        r"""Compute static Hamiltonian in the frame rotating at frequency f_d (Hz).
 
         If f_d is None, defaults to resonant frame (f_d = f_q), so detuning is 0.
 
         .. math::
-            H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2
+            H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2 \quad (\text{rad/s})
         """
         if f_d is None:
             f_d = self.f_q
@@ -145,16 +145,16 @@ class Transmon:
         H_detune = 2.0 * np.pi * detune * self.n
 
         # Non-linear Kerr term: pi * alpha * a^dag * a^dag * a * a
-        # (in rad/ns, corresponding to 2pi * (alpha/2))
+        # (in rad/s, corresponding to 2pi * (alpha/2))
         H_kerr = np.pi * self.alpha * (self.ad * self.ad * self.a * self.a)
 
         return H_detune + H_kerr
 
     def c_ops(self) -> List[qutip.Qobj]:
-        """Compute Lindblad collapse operators corresponding to T1, T2, and thermal excitation.
+        """Compute Lindblad collapse operators corresponding to T1, T2, and thermal excitation in SI units.
 
         Returns:
-            List of collapse operators for qutip.mesolve.
+            List of collapse operators (in s^-1/2) for qutip.mesolve.
         """
         ops = []
 
@@ -174,11 +174,11 @@ class Transmon:
             rate_t1_half = 1.0 / (2.0 * self.t1) if not np.isinf(self.t1) else 0.0
             rate_phi = rate_t2 - rate_t1_half
 
-            if rate_phi < -1e-9:
+            if rate_phi < -1e-15:
                 raise ValueError(
-                    f"Invalid coherence parameters: T2 ({self.t2} ns) cannot exceed 2 * T1 ({2 * self.t1} ns)"
+                    f"Invalid coherence parameters: T2 ({self.t2} s) cannot exceed 2 * T1 ({2 * self.t1} s)"
                 )
-            elif rate_phi > 1e-12:
+            elif rate_phi > 1e-18:
                 # Collapse operator sqrt(2 * Gamma_phi) * n
                 ops.append(np.sqrt(2.0 * rate_phi) * self.n)
 
@@ -186,6 +186,6 @@ class Transmon:
 
     def __repr__(self) -> str:
         return (
-            f"Transmon('{self.name}', f_q={self.f_q:.3f}GHz, alpha={self.alpha*1e3:.1f}MHz, "
-            f"levels={self.levels}, T1={self.t1}ns, T2={self.t2}ns)"
+            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz, "
+            f"levels={self.levels}, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
         )

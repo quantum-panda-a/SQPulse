@@ -1,4 +1,4 @@
-"""Rabi oscillation experiments (Amplitude Rabi and Time Rabi)."""
+"""Rabi oscillation experiments (Amplitude Rabi and Time Rabi) in SI units."""
 
 from __future__ import annotations
 from typing import Optional, Type, Dict, Any, Union
@@ -14,7 +14,7 @@ from .fitting import fit_sine
 
 
 class RabiResult:
-    """Container for Rabi experiment measurements and fit results."""
+    """Container for Rabi experiment measurements and fit results in SI units."""
 
     def __init__(
         self,
@@ -37,7 +37,7 @@ class RabiResult:
 
     @property
     def amp_pi(self) -> float:
-        """Calibrated amplitude for a pi pulse (if amplitude Rabi)."""
+        """Calibrated amplitude for a pi pulse (if amplitude Rabi) in rad/s (or drive units)."""
         if self.sweep_type != "amplitude":
             raise ValueError("amp_pi is only valid for Amplitude Rabi")
         return self.fit_info["period"] / 2.0
@@ -49,7 +49,7 @@ class RabiResult:
 
     @property
     def time_pi(self) -> float:
-        """Calibrated pulse duration for a pi pulse (if time Rabi)."""
+        """Calibrated pulse duration for a pi pulse (if time Rabi) in seconds."""
         if self.sweep_type != "time":
             raise ValueError("time_pi is only valid for Time Rabi")
         return self.fit_info["period"] / 2.0
@@ -67,14 +67,14 @@ class RabiResult:
         ax.plot(self.sweep_vals, self.fit_info["y_fit"], color="#d62728", lw=2, label="Sine Fit", zorder=2)
 
         if self.sweep_type == "amplitude":
-            ax.set_xlabel("Drive Amplitude (arb. units)")
+            ax.set_xlabel("Drive Amplitude (rad/s or arb. units)")
             ax.set_title(f"Amplitude Rabi ({self.transmon.name})")
-            ax.axvline(self.amp_pi, color="green", ls="--", label=f"π-pulse: {self.amp_pi:.4f}")
-            ax.axvline(self.amp_pi_half, color="orange", ls=":", label=f"π/2-pulse: {self.amp_pi_half:.4f}")
+            ax.axvline(self.amp_pi, color="green", ls="--", label=f"π-pulse: {self.amp_pi:.3e}")
+            ax.axvline(self.amp_pi_half, color="orange", ls=":", label=f"π/2-pulse: {self.amp_pi_half:.3e}")
         else:
-            ax.set_xlabel("Pulse Duration (ns)")
+            ax.set_xlabel("Pulse Duration (s)")
             ax.set_title(f"Time Rabi ({self.transmon.name})")
-            ax.axvline(self.time_pi, color="green", ls="--", label=f"π-time: {self.time_pi:.1f} ns")
+            ax.axvline(self.time_pi, color="green", ls="--", label=f"π-time: {self.time_pi:.2e} s")
 
         ax.set_ylabel("Excited State Population P(|1⟩)")
         ax.set_ylim(-0.05, 1.05)
@@ -84,15 +84,15 @@ class RabiResult:
 
 
 class RabiExperiment:
-    """Executes Amplitude Rabi or Time Rabi experiments."""
+    """Executes Amplitude Rabi or Time Rabi experiments in SI units."""
 
     @staticmethod
     def amplitude_rabi(
         transmon: Transmon,
         pulse_type: Type[Pulse] = GaussianPulse,
-        duration: float = 40.0,
+        duration: float = 40e-9,
         amps: Optional[np.ndarray] = None,
-        dt: float = 0.5,
+        dt: float = 5e-10,
         **pulse_kwargs,
     ) -> RabiResult:
         """Perform an Amplitude Rabi sweep to calibrate pi and pi/2 pulse amplitudes.
@@ -100,18 +100,18 @@ class RabiExperiment:
         Args:
             transmon: Physical Transmon model.
             pulse_type: Pulse class to instantiate (default GaussianPulse).
-            duration: Pulse length in ns (default 40 ns).
-            amps: 1D array of amplitudes to sweep.
-            dt: Simulation time step in ns.
+            duration: Pulse length in seconds (default 40e-9 s = 40 ns).
+            amps: 1D array of amplitudes to sweep in rad/s.
+            dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
             pulse_kwargs: Additional kwargs passed to pulse_type.
         """
         if amps is None:
-            amps = np.linspace(0.0, 0.15, 41)
+            amps = np.linspace(0.0, 2.0e8, 41)
 
         p1_list = []
         for a in amps:
             p = pulse_type(duration=duration, amp=a, **pulse_kwargs)
-            seq = PulseSequence(name=f"rabi_a_{a:.4f}").add(transmon.drive, p)
+            seq = PulseSequence(name=f"rabi_a_{a:.2e}").add(transmon.drive, p)
             res = Simulator.run(transmon, seq, dt=dt)
             p1_list.append(res.final_population(1))
 
@@ -130,19 +130,28 @@ class RabiExperiment:
     def time_rabi(
         transmon: Transmon,
         pulse_type: Type[Pulse] = SquarePulse,
-        amp: float = 0.05,
+        amp: float = 5.0e7,
         durations: Optional[np.ndarray] = None,
-        dt: float = 0.5,
+        dt: float = 5e-10,
         **pulse_kwargs,
     ) -> RabiResult:
-        """Perform a Time Rabi sweep (duration sweep with fixed amplitude)."""
+        """Perform a Time Rabi sweep (duration sweep with fixed amplitude).
+
+        Args:
+            transmon: Physical Transmon model.
+            pulse_type: Pulse class to instantiate (default SquarePulse).
+            amp: Drive amplitude in rad/s (default 5e7 rad/s).
+            durations: 1D array of durations in seconds to sweep.
+            dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
+            pulse_kwargs: Additional kwargs passed to pulse_type.
+        """
         if durations is None:
-            durations = np.linspace(2.0, 60.0, 40)
+            durations = np.linspace(2e-9, 60e-9, 40)
 
         p1_list = []
         for d in durations:
             p = pulse_type(duration=d, amp=amp, **pulse_kwargs)
-            seq = PulseSequence(name=f"rabi_t_{d:.1f}").add(transmon.drive, p)
+            seq = PulseSequence(name=f"rabi_t_{d:.2e}").add(transmon.drive, p)
             res = Simulator.run(transmon, seq, dt=dt)
             p1_list.append(res.final_population(1))
 

@@ -1,4 +1,4 @@
-"""Base Pulse class and waveform primitives for SQPulse."""
+"""Base Pulse class and waveform primitives for SQPulse in SI units."""
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -8,13 +8,13 @@ import matplotlib.pyplot as plt
 
 
 class Pulse(ABC):
-    """Abstract base class representing a physical microwave or RF pulse.
+    """Abstract base class representing a physical microwave or RF pulse in SI units.
 
     Attributes:
-        duration (float): Pulse duration in nanoseconds (ns).
-        amp (float): Peak amplitude scaling (arbitrary units or rad/ns).
+        duration (float): Pulse duration in seconds (s).
+        amp (float): Peak amplitude scaling (arbitrary units or rad/s).
         phase (float): Carrier phase offset in radians.
-        detune (float): Frequency detuning offset in GHz (df in exp(-i * 2pi * df * t)).
+        detune (float): Frequency detuning offset in Hz (df in exp(-i * 2pi * df * t)).
         drag (float): DRAG coefficient for imaginary quadrature (Q = drag * dI/dt).
         name (str): Optional identifier for the pulse.
     """
@@ -29,7 +29,7 @@ class Pulse(ABC):
         name: Optional[str] = None,
     ):
         if duration <= 0:
-            raise ValueError(f"Pulse duration must be positive, got {duration}")
+            raise ValueError(f"Pulse duration must be positive, got {duration} s")
         self.duration = float(duration)
         self.amp = float(amp)
         self.phase = float(phase)
@@ -42,34 +42,37 @@ class Pulse(ABC):
         """Calculate the real normalized envelope f(t) in [0, 1] for time array t in [0, duration].
 
         Args:
-            t: 1D numpy array of time points relative to pulse start (0 <= t <= duration).
+            t: 1D numpy array of time points relative to pulse start (0 <= t <= duration, in seconds).
 
         Returns:
             1D numpy array of real envelope values.
         """
         pass
 
-    def envelope_derivative(self, t: np.ndarray, dt: float = 0.01) -> np.ndarray:
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
         """Calculate the numerical derivative df/dt of the envelope.
 
-        Can be overridden by subclasses with analytical derivatives.
+        Args:
+            t: 1D numpy array of time points in seconds.
+            dt: Differentiation step in seconds. If None, defaults to min(duration * 1e-3, 1e-12).
         """
-        # Central difference
+        if dt is None:
+            dt = min(self.duration * 1e-3, 1e-12)
+
         t_plus = np.clip(t + dt, 0, self.duration)
         t_minus = np.clip(t - dt, 0, self.duration)
         delta_t = t_plus - t_minus
-        # Avoid division by zero at single boundary points
         delta_t[delta_t == 0] = 1.0
         return (self.envelope(t_plus) - self.envelope(t_minus)) / delta_t
 
-    def sample(self, dt: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
+    def sample(self, dt: float = 1e-9) -> Tuple[np.ndarray, np.ndarray]:
         """Sample the complex baseband waveform Omega(t) = I(t) + i*Q(t).
 
         Args:
-            dt: Sampling interval in nanoseconds (default 1.0 ns).
+            dt: Sampling interval in seconds (default 1e-9 s = 1 ns).
 
         Returns:
-            t: 1D numpy array of sample times [0, dt, 2*dt, ..., duration].
+            t: 1D numpy array of sample times [0, dt, 2*dt, ..., duration] in seconds.
             c_wave: 1D complex numpy array of sampled pulse values.
         """
         n_samples = max(int(np.round(self.duration / dt)) + 1, 2)
@@ -79,7 +82,7 @@ class Pulse(ABC):
         i_wave = self.amp * env
 
         if self.drag != 0.0:
-            d_env = self.envelope_derivative(t, dt=min(dt * 0.1, 0.05))
+            d_env = self.envelope_derivative(t, dt=min(dt * 0.1, self.duration * 1e-3))
             q_wave = self.amp * self.drag * d_env
         else:
             q_wave = np.zeros_like(i_wave)
@@ -90,7 +93,7 @@ class Pulse(ABC):
         if self.phase != 0.0:
             c_wave = c_wave * np.exp(1j * self.phase)
 
-        # Apply software detuning: exp(-i * 2pi * detune * t)
+        # Apply software detuning: exp(-i * 2pi * detune * t) (detune in Hz, t in s)
         if self.detune != 0.0:
             c_wave = c_wave * np.exp(-2j * np.pi * self.detune * t)
 
@@ -98,19 +101,19 @@ class Pulse(ABC):
 
     def fft(
         self,
-        dt: float = 0.1,
+        dt: float = 1e-10,
         pad_factor: int = 4,
         window: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute the Fast Fourier Transform (FFT) and Power Spectral Density (PSD).
 
         Args:
-            dt: Sampling time step in ns (smaller dt gives wider frequency range).
+            dt: Sampling time step in seconds (default 1e-10 s = 0.1 ns).
             pad_factor: Zero-padding multiplier to improve spectral frequency resolution.
             window: Whether to apply a Hann window prior to FFT (default False).
 
         Returns:
-            freqs: Frequency axis in GHz, centered at 0 (from -f_Nyquist to +f_Nyquist).
+            freqs: Frequency axis in Hz, centered at 0 (from -f_Nyquist to +f_Nyquist).
             spec: Complex frequency spectrum.
             psd_dB: Normalized Power Spectral Density in dB (peak at 0 dB).
         """
@@ -127,22 +130,21 @@ class Pulse(ABC):
         padded_wave[start_idx : start_idx + n] = c_wave
 
         spec = np.fft.fftshift(np.fft.fft(padded_wave) * dt)
-        freqs = np.fft.fftshift(np.fft.fftfreq(n_fft, d=dt))  # in GHz if dt is in ns
+        freqs = np.fft.fftshift(np.fft.fftfreq(n_fft, d=dt))  # in Hz (since dt is in s)
 
         # PSD in dB
         magnitude_sq = np.abs(spec) ** 2
         max_val = np.max(magnitude_sq)
         if max_val > 0:
             psd_norm = magnitude_sq / max_val
-            # Floor at -100 dB to avoid log(0)
             psd_dB = 10 * np.log10(np.clip(psd_norm, 1e-10, 1.0))
         else:
             psd_dB = np.zeros_like(magnitude_sq)
 
         return freqs, spec, psd_dB
 
-    def spectral_bandwidth(self, dt: float = 0.1, threshold_dB: float = -3.0) -> float:
-        """Calculate the frequency bandwidth (e.g. -3 dB FWHM) in GHz."""
+    def spectral_bandwidth(self, dt: float = 1e-10, threshold_dB: float = -3.0) -> float:
+        """Calculate the frequency bandwidth (e.g. -3 dB FWHM) in Hz."""
         freqs, _, psd_dB = self.fft(dt=dt)
         mask = psd_dB >= threshold_dB
         if np.any(mask):
@@ -151,7 +153,7 @@ class Pulse(ABC):
 
     def plot_time(
         self,
-        dt: float = 0.5,
+        dt: float = 5e-10,
         ax: Optional[plt.Axes] = None,
         show_envelope: bool = True,
         title: Optional[str] = None,
@@ -167,16 +169,16 @@ class Pulse(ABC):
         if show_envelope:
             ax.plot(t, np.abs(c_wave), label="|Envelope|", color="#2ca02c", lw=1.2, ls=":")
 
-        ax.set_xlabel("Time (ns)")
+        ax.set_xlabel("Time (s)")
         ax.set_ylabel("Amplitude")
-        ax.set_title(title or f"{self.name} - Time Domain (T={self.duration:.1f} ns)")
+        ax.set_title(title or f"{self.name} - Time Domain (T={self.duration:.2e} s)")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="best")
         return ax
 
     def plot_freq(
         self,
-        dt: float = 0.1,
+        dt: float = 1e-10,
         freq_range: Optional[Tuple[float, float]] = None,
         ax: Optional[plt.Axes] = None,
         log_scale: bool = True,
@@ -185,8 +187,8 @@ class Pulse(ABC):
         """Plot the pulse spectrum in the frequency domain.
 
         Args:
-            dt: Sampling step in ns.
-            freq_range: Tuple of (min_freq, max_freq) in GHz. Defaults to auto.
+            dt: Sampling step in seconds.
+            freq_range: Tuple of (min_freq, max_freq) in Hz. Defaults to auto.
             ax: Optional matplotlib axes.
             log_scale: If True, plot in dB; otherwise linear magnitude.
             title: Optional plot title.
@@ -216,7 +218,7 @@ class Pulse(ABC):
             if fwhm > 0:
                 ax.set_xlim(-3 * fwhm, 3 * fwhm)
 
-        ax.set_xlabel("Frequency Detuning (GHz)")
+        ax.set_xlabel("Frequency Detuning (Hz)")
         ax.set_title(title or f"{self.name} - Frequency Domain")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="best")
@@ -225,7 +227,7 @@ class Pulse(ABC):
     def plot(
         self,
         domain: str = "both",
-        dt: float = 0.2,
+        dt: float = 5e-10,
         freq_range: Optional[Tuple[float, float]] = None,
         figsize: Optional[Tuple[int, int]] = None,
     ) -> plt.Figure:
@@ -233,8 +235,8 @@ class Pulse(ABC):
 
         Args:
             domain: 'time', 'freq', or 'both'.
-            dt: Time sampling in ns.
-            freq_range: Optional (f_min, f_max) in GHz for frequency plot.
+            dt: Time sampling in seconds.
+            freq_range: Optional (f_min, f_max) in Hz for frequency plot.
             figsize: Figure size.
         """
         if domain == "time":
@@ -264,7 +266,7 @@ class Pulse(ABC):
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__.__name__}(duration={self.duration}ns, "
-            f"amp={self.amp:.3f}, phase={self.phase:.2f}, detune={self.detune:.3f}GHz, "
-            f"drag={self.drag:.2f})"
+            f"{self.__class__.__name__}(duration={self.duration:.2e}s, "
+            f"amp={self.amp:.3e}, phase={self.phase:.2f}, detune={self.detune:.2e}Hz, "
+            f"drag={self.drag:.2e})"
         )

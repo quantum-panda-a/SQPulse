@@ -1,4 +1,4 @@
-"""Simulation result container and analysis tools for SQPulse."""
+"""Simulation result container and analysis tools for SQPulse in SI units."""
 
 from __future__ import annotations
 from typing import List, Dict, Tuple, Optional
@@ -10,10 +10,10 @@ from ..models.transmon import Transmon
 
 
 class SimulationResult:
-    """Encapsulates the time evolution data of a simulated quantum system.
+    """Encapsulates the time evolution data of a simulated quantum system in SI units.
 
     Args:
-        times (np.ndarray): 1D array of evolution timestamps in ns.
+        times (np.ndarray): 1D array of evolution timestamps in seconds (s).
         states (List[qutip.Qobj]): State kets or density matrices at each timestamp.
         transmon (Transmon): Physical model simulated.
     """
@@ -87,7 +87,7 @@ class SimulationResult:
             c = colors[n % len(colors)]
             ax.plot(self.times, pop, label=f"|{n}⟩ (P{n})", color=c, lw=2)
 
-        ax.set_xlabel("Time (ns)")
+        ax.set_xlabel("Time (s)")
         ax.set_ylabel("State Population")
         ax.set_ylim(-0.02, 1.05)
         ax.set_title(title or f"{self.transmon.name} - Dynamics Evolution")
@@ -110,7 +110,7 @@ class SimulationResult:
         ax.plot(self.times, y, label="⟨Y⟩", color="#2ca02c", lw=2)
         ax.plot(self.times, z, label="⟨Z⟩", color="#d62728", lw=2)
 
-        ax.set_xlabel("Time (ns)")
+        ax.set_xlabel("Time (s)")
         ax.set_ylabel("Bloch Coordinate")
         ax.set_ylim(-1.05, 1.05)
         ax.set_title(title or f"{self.transmon.name} - Bloch Coordinates vs Time")

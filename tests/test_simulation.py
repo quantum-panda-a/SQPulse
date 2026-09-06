@@ -1,4 +1,4 @@
-"""Tests for sqpulse.simulation."""
+"""Tests for sqpulse.simulation in SI units."""
 
 import numpy as np
 import pytest
@@ -9,20 +9,19 @@ from sqpulse.simulation import Simulator
 
 
 def test_resonant_rabi_flip():
-    """A square pi pulse of amplitude Omega and duration tau = pi / Omega should flip |0> to |1>."""
-    q = Transmon("q0", f_q=5.0, alpha=-0.3, levels=2)
+    """A square pi pulse of amplitude Omega (rad/s) and duration tau = pi / Omega (s) should flip |0> to |1>."""
+    q = Transmon("q0", f_q=5.0e9, alpha=-300e6, levels=2)
 
     # In our definition:
     # H_drive_x = 0.5 * (a + a^dag) = 0.5 * sigma_x
     # Rotation angle = Omega * duration (since H = 0.5 * Omega * sigma_x -> exp(-i * Omega*t/2 * sigma_x))
-    duration = 20.0  # ns
-    # For pi rotation: Omega * duration = pi -> Omega = pi / duration rad/ns
-    # In units of 2pi GHz: Omega / (2pi) = 1 / (2 * duration) GHz
-    omega = np.pi / duration
+    duration = 20e-9  # 20 ns in s
+    # For pi rotation: Omega * duration = pi -> Omega = pi / duration rad/s
+    omega = np.pi / duration  # ~ 1.57e8 rad/s
     p_pi = SquarePulse(duration=duration, amp=omega)
 
     seq = PulseSequence().add(q.drive, p_pi)
-    res = Simulator.run(q, seq, dt=0.2)
+    res = Simulator.run(q, seq, dt=2e-10)
 
     # Final population of |1> should be ~1.0
     p1 = res.final_population(1)

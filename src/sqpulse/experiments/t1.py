@@ -1,4 +1,4 @@
-"""T1 relaxation time measurement experiment."""
+"""T1 relaxation time measurement experiment in SI units."""
 
 from __future__ import annotations
 from typing import Optional, Dict, Any
@@ -13,7 +13,7 @@ from .fitting import fit_decay
 
 
 class T1Result:
-    """Container for T1 relaxation experiment measurements and fit."""
+    """Container for T1 relaxation experiment measurements and fit in SI units."""
 
     def __init__(
         self,
@@ -29,7 +29,7 @@ class T1Result:
 
     @property
     def t1_fit(self) -> float:
-        """Measured T1 time in nanoseconds."""
+        """Measured T1 time in seconds (s)."""
         return self.fit_info["T"]
 
     def plot(
@@ -41,25 +41,17 @@ class T1Result:
         if ax is None:
             _, ax = plt.subplots(figsize=figsize or (8, 4.5))
 
-        # Convert to microseconds if large
-        use_us = np.max(self.delays) >= 5000.0
-        scale = 1e-3 if use_us else 1.0
-        unit = "us" if use_us else "ns"
-
-        xs = self.delays * scale
-        t1_scaled = self.t1_fit * scale
-
-        ax.scatter(xs, self.p1_vals, color="#1f77b4", label="Simulation Data", zorder=3)
-        ax.plot(xs, self.fit_info["y_fit"], color="#d62728", lw=2, label="Exponential Fit", zorder=2)
+        ax.scatter(self.delays, self.p1_vals, color="#1f77b4", label="Simulation Data", zorder=3)
+        ax.plot(self.delays, self.fit_info["y_fit"], color="#d62728", lw=2, label="Exponential Fit", zorder=2)
 
         ax.axvline(
-            t1_scaled,
+            self.t1_fit,
             color="green",
             ls="--",
-            label=f"Fitted T1: {t1_scaled:.2f} {unit} (True: {self.transmon.t1*scale:.2f} {unit})",
+            label=f"Fitted T1: {self.t1_fit:.2e} s (True: {self.transmon.t1:.2e} s)",
         )
 
-        ax.set_xlabel(f"Delay Time ({unit})")
+        ax.set_xlabel("Delay Time (s)")
         ax.set_ylabel("Excited State Population P(|1⟩)")
         ax.set_title(f"T1 Relaxation Measurement ({self.transmon.name})")
         ax.set_ylim(-0.02, 1.05)
@@ -69,32 +61,32 @@ class T1Result:
 
 
 class T1Experiment:
-    """Measures qubit energy relaxation time T1."""
+    """Measures qubit energy relaxation time T1 in SI units."""
 
     @staticmethod
     def run(
         transmon: Transmon,
         pi_pulse: Pulse,
         delays: Optional[np.ndarray] = None,
-        dt: float = 1.0,
+        dt: float = 1e-9,
     ) -> T1Result:
         """Run T1 experiment by applying a pi-pulse and varying the wait time before measurement.
 
         Args:
-            transmon: Transmon model instance with finite T1.
+            transmon: Transmon model instance with finite T1 (in seconds).
             pi_pulse: Pre-calibrated pi pulse.
-            delays: Array of delay durations in ns.
-            dt: Simulation sampling step in ns.
+            delays: Array of delay durations in seconds.
+            dt: Simulation sampling step in seconds (default 1e-9 s = 1 ns).
         """
         if np.isinf(transmon.t1) or transmon.t1 <= 0:
-            raise ValueError(f"Transmon T1 must be finite positive, got {transmon.t1}")
+            raise ValueError(f"Transmon T1 must be finite positive, got {transmon.t1} s")
 
         if delays is None:
             delays = np.linspace(0, 3.5 * transmon.t1, 40)
 
         p1_list = []
         for d in delays:
-            seq = PulseSequence(name=f"t1_delay_{d:.0f}ns")
+            seq = PulseSequence(name=f"t1_delay_{d:.2e}s")
             seq.add(transmon.drive, pi_pulse)
             if d > 0:
                 seq.delay(transmon.drive, d)

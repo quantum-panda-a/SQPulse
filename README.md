@@ -1,6 +1,16 @@
 # SQPulse: 超导量子脉冲工程与动力学仿真库
 
-**SQPulse** 是一个专为超导量子计算（Transmon Qubit）、微波脉冲工程与含时量子动力学模拟而设计的现代 Python 库，提供了直观、模块化和显式调用的 API。
+**SQPulse** 是一个专为超导量子计算（Transmon Qubit）、微波脉冲工程与含时量子动力学模拟而设计的现代 Python 库，全面遵循**国际单位制（SI Units）**，提供了直观、模块化和显式调用的 API。
+
+---
+
+## 物理量单位约定 (SI Units)
+
+本项目中所有物理量均严格遵循国际单位制：
+- **时间 (Time)**：秒（$\text{s}$），如 $1\text{ ns} = 1\times 10^{-9}\text{ s} = 1\text{e-}9$，$25\,\mu\text{s} = 25\times 10^{-6}\text{ s} = 25\text{e-}6$；
+- **频率 (Frequency)**：赫兹（$\text{Hz}$），如 $5\text{ GHz} = 5\times 10^9\text{ Hz} = 5\text{e}9$，$-250\text{ MHz} = -250\times 10^6\text{ Hz} = -250\text{e}6$；
+- **角频率与哈密顿量 (Hamiltonian / Angular Frequency)**：$\text{rad/s}$（符合 $\hbar = 1$ 标准量子约定）；
+- **寿命与退相时间 ($T_1, T_2, T_\phi$)**：秒（$\text{s}$），衰减速率量纲为 $\text{s}^{-1}$。
 
 ---
 
@@ -24,7 +34,7 @@
    - 提供各能级粒子数布居随时间演化曲线 (`plot_populations`)、Bloch 坐标曲线 (`plot_bloch_vector`) 及 3D Bloch 球轨迹投影 (`plot_bloch_sphere`)。
 
 5. **标准化经典量子实验协议 (`experiments`)**：
-   - **Amplitude / Time Rabi**：自动扫描驱动幅度，通过正弦拟合标定 $\pi$ 脉冲与 $\pi/2$ 脉冲。
+   - **Amplitude / Time Rabi**：自动扫描驱动幅度（$\text{rad/s}$），通过正弦拟合标定 $\pi$ 脉冲与 $\pi/2$ 脉冲。
    - **$T_1$ 弛豫测量**：施加 $\pi$ 脉冲后扫描延时，通过指数衰减拟合提取 $T_1$ 寿命。
    - **Ramsey 干涉测量**：$\pi/2 - \tau - \pi/2$ 干涉序列，通过阻尼正弦拟合提取 $T_2^*$ 及微波失谐量 $\Delta$。
 
@@ -38,16 +48,16 @@
 import matplotlib.pyplot as plt
 from sqpulse import GaussianPulse, CosinePulse, SquarePulse, compare_pulses
 
-# 定义一个 40 ns 的高斯脉冲
-p_gauss = GaussianPulse(duration=40.0, amp=1.0, chop=4.0)
+# 定义一个 40 ns (40e-9 s) 的高斯脉冲
+p_gauss = GaussianPulse(duration=40e-9, amp=1.0, chop=4.0)
 
 # 一键展示时域波形与频域 FFT 功率谱
 p_gauss.plot(domain="both")
 plt.show()
 
-# 对比多种波形的抗高频谱泄露性能
-p_cos = CosinePulse(duration=40.0, amp=1.0)
-p_sq = SquarePulse(duration=40.0, amp=1.0)
+# 对比多种波形的抗高频谱泄露性能 (cutoff = 100 MHz = 100e6 Hz)
+p_cos = CosinePulse(duration=40e-9, amp=1.0)
+p_sq = SquarePulse(duration=40e-9, amp=1.0)
 compare_pulses([p_gauss, p_cos, p_sq], domain="both")
 plt.show()
 ```
@@ -58,14 +68,14 @@ plt.show()
 import matplotlib.pyplot as plt
 from sqpulse import Transmon, PulseSequence, GaussianPulse, Simulator
 
-# 1. 定义 Transmon (5.0 GHz, 非谐性 -250 MHz, 3能级, T1=25us, T2=18us)
-q = Transmon("q0", f_q=5.0, alpha=-0.25, levels=3, t1=25000.0, t2=18000.0)
+# 1. 定义 Transmon (5.0 GHz = 5e9 Hz, 非谐性 -250 MHz = -250e6 Hz, T1 = 25 us = 25e-6 s)
+q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, levels=3, t1=25.0e-6, t2=18.0e-6)
 
-# 2. 编排脉冲序列
+# 2. 编排脉冲序列 (时间单位均为秒 s)
 seq = PulseSequence(name="xy_drive")
-seq.add(q.drive, GaussianPulse(duration=30.0, amp=0.08))
-seq.delay(q.drive, 20.0)
-seq.add(q.drive, GaussianPulse(duration=30.0, amp=0.08, phase=1.5708)) # 绕 Y 轴驱动
+seq.add(q.drive, GaussianPulse(duration=30e-9, amp=8.0e7))
+seq.delay(q.drive, 20e-9)
+seq.add(q.drive, GaussianPulse(duration=30e-9, amp=8.0e7, phase=1.5708)) # 绕 Y 轴驱动
 
 # 3. 绘制时序图
 seq.plot()
@@ -84,25 +94,25 @@ plt.show()
 import matplotlib.pyplot as plt
 from sqpulse import Transmon, GaussianPulse, RabiExperiment, T1Experiment, RamseyExperiment
 
-q = Transmon("q0", f_q=5.0, alpha=-0.25, t1=20000.0, t2=15000.0)
+q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, t1=20.0e-6, t2=15.0e-6)
 
-# 3.1 振幅 Rabi 标定 pi 脉冲幅度
-rabi_res = RabiExperiment.amplitude_rabi(q, pulse_type=GaussianPulse, duration=40.0)
-print(f"标定得到的 pi 脉冲幅度: {rabi_res.amp_pi:.5f}")
+# 3.1 振幅 Rabi 标定 pi 脉冲幅度 (单位: rad/s)
+rabi_res = RabiExperiment.amplitude_rabi(q, pulse_type=GaussianPulse, duration=40e-9)
+print(f"标定得到的 pi 脉冲幅度: {rabi_res.amp_pi:.3e} rad/s")
 rabi_res.plot()
 plt.show()
 
 # 3.2 T1 弛豫测量
-pi_pulse = GaussianPulse(duration=40.0, amp=rabi_res.amp_pi)
+pi_pulse = GaussianPulse(duration=40e-9, amp=rabi_res.amp_pi)
 t1_res = T1Experiment.run(q, pi_pulse=pi_pulse)
-print(f"拟合得到的 T1 寿命: {t1_res.t1_fit:.1f} ns")
+print(f"拟合得到的 T1 寿命: {t1_res.t1_fit:.2e} s")
 t1_res.plot()
 plt.show()
 
-# 3.3 Ramsey 干涉实验
-pi2_pulse = GaussianPulse(duration=40.0, amp=rabi_res.amp_pi_half)
-ramsey_res = RamseyExperiment.run(q, pi_half_pulse=pi2_pulse, detuning=0.002) # 2 MHz 失谐
-print(f"拟合测得 T2*: {ramsey_res.t2_star:.1f} ns, 失谐: {ramsey_res.fitted_detuning*1e3:.2f} MHz")
+# 3.3 Ramsey 干涉实验 (失谐 detuning = 2 MHz = 2e6 Hz)
+pi2_pulse = GaussianPulse(duration=40e-9, amp=rabi_res.amp_pi_half)
+ramsey_res = RamseyExperiment.run(q, pi_half_pulse=pi2_pulse, detuning=2.0e6)
+print(f"拟合测得 T2*: {ramsey_res.t2_star:.2e} s, 失谐: {ramsey_res.fitted_detuning:.2e} Hz")
 ramsey_res.plot()
 plt.show()
 ```

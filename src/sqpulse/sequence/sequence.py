@@ -1,4 +1,4 @@
-"""Pulse sequence orchestration and compilation for SQPulse."""
+"""Pulse sequence orchestration and compilation for SQPulse in SI units."""
 
 from __future__ import annotations
 from typing import Dict, List, Tuple, Optional, Union
@@ -11,7 +11,7 @@ from .channel import ChannelLike, normalize_channel
 
 
 class ScheduledPulse:
-    """Represents a pulse scheduled at a specific start time on a channel."""
+    """Represents a pulse scheduled at a specific start time on a channel in SI units."""
 
     def __init__(self, t_start: float, pulse: Pulse):
         self.t_start = float(t_start)
@@ -22,11 +22,11 @@ class ScheduledPulse:
         return self.t_start + self.pulse.duration
 
     def __repr__(self) -> str:
-        return f"ScheduledPulse({self.pulse.name}, t=[{self.t_start:.1f}, {self.t_end:.1f}] ns)"
+        return f"ScheduledPulse({self.pulse.name}, t=[{self.t_start:.2e}, {self.t_end:.2e}] s)"
 
 
 class PulseSequence:
-    """Timeline container for scheduling pulses across multiple channels.
+    """Timeline container for scheduling pulses across multiple channels in SI units (seconds).
 
     Args:
         name (str): Sequence identifier.
@@ -44,7 +44,7 @@ class PulseSequence:
 
     @property
     def duration(self) -> float:
-        """Total duration of the sequence in ns."""
+        """Total duration of the sequence in seconds (s)."""
         if not self._channel_clocks:
             return 0.0
         return max(self._channel_clocks.values())
@@ -60,7 +60,7 @@ class PulseSequence:
         Args:
             channel: Target channel (str or Channel object).
             pulse: Pulse to schedule.
-            t_start: Optional explicit start time in ns. If None, appends to channel's current clock.
+            t_start: Optional explicit start time in seconds. If None, appends to channel's current clock.
 
         Returns:
             self (for method chaining).
@@ -81,11 +81,11 @@ class PulseSequence:
         return self
 
     def delay(self, channel: ChannelLike, duration: float) -> PulseSequence:
-        """Advance the clock on a specific channel by duration (ns).
+        """Advance the clock on a specific channel by duration (in seconds).
 
         Args:
             channel: Target channel.
-            duration: Delay length in ns.
+            duration: Delay length in seconds.
         """
         ch = normalize_channel(channel)
         if ch not in self._channels:
@@ -95,7 +95,7 @@ class PulseSequence:
         return self
 
     def delay_all(self, duration: float) -> PulseSequence:
-        """Add a delay to all channels."""
+        """Add a delay to all channels (in seconds)."""
         self.sync()
         for ch in self._channel_clocks:
             self._channel_clocks[ch] += float(duration)
@@ -116,14 +116,14 @@ class PulseSequence:
             self._channel_clocks[c] = t_max
         return self
 
-    def sample(self, dt: float = 1.0) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    def sample(self, dt: float = 1e-9) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         """Sample all channels onto a uniform time grid.
 
         Args:
-            dt: Sample time step in ns.
+            dt: Sample time step in seconds (default 1e-9 s = 1 ns).
 
         Returns:
-            times: 1D numpy array of time points [0, dt, ..., duration].
+            times: 1D numpy array of time points [0, dt, ..., duration] in seconds.
             waveforms: Dict mapping channel name to complex 1D array of baseband signal.
         """
         total_time = self.duration
@@ -150,18 +150,18 @@ class PulseSequence:
     def to_qutip_evo(
         self,
         transmon,
-        dt: float = 0.5,
+        dt: float = 5e-10,
         f_d: Optional[float] = None,
     ) -> Tuple[np.ndarray, qutip.QobjEvo]:
         """Compile this sequence for a given Transmon into a QuTiP QobjEvo time-dependent Hamiltonian.
 
         Args:
             transmon: Transmon model instance.
-            dt: Simulation time step in ns.
-            f_d: Rotating frame drive reference frequency in GHz (defaults to transmon.f_q).
+            dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
+            f_d: Rotating frame drive reference frequency in Hz (defaults to transmon.f_q).
 
         Returns:
-            times: 1D array of times in ns.
+            times: 1D array of times in seconds.
             evo: QuTiP QobjEvo time-dependent Hamiltonian.
         """
         times, waveforms = self.sample(dt=dt)
@@ -187,7 +187,7 @@ class PulseSequence:
 
     def plot(
         self,
-        dt: float = 0.5,
+        dt: float = 5e-10,
         figsize: Optional[Tuple[int, int]] = None,
         title: Optional[str] = None,
     ) -> plt.Figure:
@@ -219,13 +219,13 @@ class PulseSequence:
             ax.grid(True, alpha=0.3)
             ax.legend(loc="upper right")
 
-        axes[-1, 0].set_xlabel("Time (ns)")
-        fig.suptitle(title or f"Pulse Sequence: {self.name} (Duration: {self.duration:.1f} ns)", y=1.02)
+        axes[-1, 0].set_xlabel("Time (s)")
+        fig.suptitle(title or f"Pulse Sequence: {self.name} (Duration: {self.duration:.2e} s)", y=1.02)
         plt.tight_layout()
         return fig
 
     def __repr__(self) -> str:
         return (
             f"PulseSequence('{self.name}', channels={self.channels}, "
-            f"duration={self.duration:.1f}ns)"
+            f"duration={self.duration:.2e}s)"
         )

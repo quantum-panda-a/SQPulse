@@ -1,4 +1,4 @@
-"""Dynamic evolution solver for SQPulse."""
+"""Dynamic evolution solver for SQPulse in SI units."""
 
 from __future__ import annotations
 from typing import List, Optional, Dict, Any
@@ -11,14 +11,14 @@ from .result import SimulationResult
 
 
 class Simulator:
-    """Master equation and Schrödinger equation solver for quantum pulse sequences."""
+    """Master equation and Schrödinger equation solver for quantum pulse sequences in SI units."""
 
     @staticmethod
     def run(
         transmon: Transmon,
         sequence: PulseSequence,
         init_state: Optional[qutip.Qobj] = None,
-        dt: float = 0.5,
+        dt: float = 5e-10,
         f_d: Optional[float] = None,
         c_ops: Optional[List[qutip.Qobj]] = None,
         solver_options: Optional[Dict[str, Any]] = None,
@@ -29,13 +29,13 @@ class Simulator:
             transmon: Physical Transmon model.
             sequence: PulseSequence containing the scheduled pulses.
             init_state: Initial state (Ket or density matrix). Defaults to ground state |0>.
-            dt: Simulation time step in ns (default 0.5 ns).
-            f_d: Rotating frame reference frequency in GHz (defaults to transmon.f_q).
+            dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
+            f_d: Rotating frame reference frequency in Hz (defaults to transmon.f_q).
             c_ops: Additional custom Lindblad collapse operators.
             solver_options: Optional dict of options passed to qutip.mesolve.
 
         Returns:
-            SimulationResult containing times and states.
+            SimulationResult containing times (in seconds) and states.
         """
         if init_state is None:
             init_state = transmon.ground_state()
