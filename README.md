@@ -2,19 +2,15 @@
   <img src="assets/logo.png" alt="SQPulse Logo" width="180">
 </p>
 
-# SQPulse: 超导量子脉冲工程与动力学仿真库
+# SQPulse: 超导量子比特动力学仿真
 
-**SQPulse** 是一个专为超导量子计算（Transmon Qubit）、微波脉冲工程与含时量子动力学模拟而设计的现代 Python 库，全面遵循**国际单位制（SI Units）**，提供了直观、模块化和显式调用的 API。
+**SQPulse** 是一个专为超导量子计算（Transmon Qubit）、微波脉冲工程与含时量子动力学模拟而设计的现代 Python 库，提供了直观、模块化和显式调用的 API。
 
 ---
 
 ## 物理量单位约定 (SI Units)
 
-本项目中所有物理量均严格遵循国际单位制：
-- **时间 (Time)**：秒（$\text{s}$），如 $1\text{ ns} = 1\times 10^{-9}\text{ s} = 1\text{e-}9$，$25\,\mu\text{s} = 25\times 10^{-6}\text{ s} = 25\text{e-}6$；
-- **频率 (Frequency)**：赫兹（$\text{Hz}$），如 $5\text{ GHz} = 5\times 10^9\text{ Hz} = 5\text{e}9$，$-250\text{ MHz} = -250\times 10^6\text{ Hz} = -250\text{e}6$；
-- **角频率与哈密顿量 (Hamiltonian / Angular Frequency)**：$\text{rad/s}$（符合 $\hbar = 1$ 标准量子约定）；
-- **寿命与退相时间 ($T_1, T_2, T_\phi$)**：秒（$\text{s}$），衰减速率量纲为 $\text{s}^{-1}$。
+本项目中所有物理量均严格遵循国际单位制。
 
 > [!TIP]
 > **推荐使用内置物理单位常量**：

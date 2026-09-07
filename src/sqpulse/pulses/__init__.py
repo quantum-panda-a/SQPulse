@@ -8,6 +8,7 @@ from .shapes import (
     SquarePulse,
     FlatTopPulse,
     SechPulse,
+    SlepianPulse,
     DRAGPulse,
     CustomPulse,
     ScaledPulse,
@@ -17,6 +18,7 @@ from .shapes import (
     square_pulse,
     flattop_pulse,
     sech_pulse,
+    slepian_pulse,
     drag_pulse,
     custom_pulse,
 )
@@ -30,6 +32,7 @@ __all__ = [
     "SquarePulse",
     "FlatTopPulse",
     "SechPulse",
+    "SlepianPulse",
     "DRAGPulse",
     "CustomPulse",
     "ScaledPulse",
@@ -39,8 +42,10 @@ __all__ = [
     "square_pulse",
     "flattop_pulse",
     "sech_pulse",
+    "slepian_pulse",
     "drag_pulse",
     "custom_pulse",
     "spectral_leakage",
     "compare_pulses",
 ]
+

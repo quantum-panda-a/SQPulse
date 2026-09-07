@@ -36,6 +36,9 @@ class GaussianPulse(Pulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -46,6 +49,9 @@ class GaussianPulse(Pulse):
             detune=detune,
             drag=drag,
             alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
@@ -105,6 +111,9 @@ class CosinePulse(Pulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -115,6 +124,9 @@ class CosinePulse(Pulse):
             detune=detune,
             drag=drag,
             alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
@@ -153,6 +165,9 @@ class LorentzianPulse(Pulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -163,6 +178,9 @@ class LorentzianPulse(Pulse):
             detune=detune,
             drag=drag,
             alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
@@ -217,6 +235,9 @@ class SquarePulse(Pulse):
         amp: float = 1.0,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -227,6 +248,9 @@ class SquarePulse(Pulse):
             detune=detune,
             drag=0.0,
             alpha=None,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
@@ -247,11 +271,14 @@ class FlatTopPulse(Pulse):
         duration (float): Total pulse duration in seconds (s).
         amp (float): Pulse amplitude during flat region.
         ramp_time (Optional[float]): Duration of ramp-up and ramp-down in seconds (s). Defaults to duration / 4.
-        ramp_type (str): 'cosine' (Hann edge) or 'gaussian'.
+        ramp_type (str): 'cosine' (Hann edge), 'gaussian', or 'tanh'.
         drag (float): Dimensionless DRAG coefficient beta.
         alpha (Optional[float]): Anharmonicity in Hz for DRAG quadrature scaling.
         phase (float): Phase in radians.
         detune (float): Detuning in Hz.
+        noise_sigma (float): Standard deviation of additive noise. Default: 0.0.
+        noise_alpha (float): Exponent for noise PSD S(f) ~ (1/f)^alpha. Default: 0.0.
+        scale_noise (bool): Whether to scale additive noise by amplitude. Default: False.
         name (Optional[str]): Pulse name.
         length (Optional[float]): Alias for duration in seconds (s).
     """
@@ -266,6 +293,9 @@ class FlatTopPulse(Pulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -276,10 +306,17 @@ class FlatTopPulse(Pulse):
             detune=detune,
             drag=drag,
             alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
         self.ramp_type = ramp_type.lower()
+        if self.ramp_type not in ("cosine", "gaussian", "tanh"):
+            raise ValueError(
+                f"ramp_type must be 'cosine', 'gaussian', or 'tanh', got '{ramp_type}'"
+            )
         if ramp_time is None:
             self.ramp_time = self.duration / 4.0
         else:
@@ -311,6 +348,10 @@ class FlatTopPulse(Pulse):
         elif self.ramp_type == "gaussian":
             sigma = t_ramp / 2.0
             env[mask_up] = np.exp(-((t[mask_up] - t_ramp) ** 2) / (2.0 * sigma**2))
+        elif self.ramp_type == "tanh":
+            k = 2.0
+            u_up = k * (2.0 * t[mask_up] / t_ramp - 1.0)
+            env[mask_up] = (np.tanh(u_up) + np.tanh(k)) / (2.0 * np.tanh(k))
 
         # Ramp down: t > duration - t_ramp
         t_down_start = self.duration - t_ramp
@@ -321,8 +362,48 @@ class FlatTopPulse(Pulse):
         elif self.ramp_type == "gaussian":
             sigma = t_ramp / 2.0
             env[mask_down] = np.exp(-(t_rel**2) / (2.0 * sigma**2))
+        elif self.ramp_type == "tanh":
+            k = 2.0
+            u_down = k * (2.0 * t_rel / t_ramp - 1.0)
+            env[mask_down] = (np.tanh(k) - np.tanh(u_down)) / (2.0 * np.tanh(k))
 
         return env
+
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
+        t = np.asarray(t)
+        d_env = np.zeros_like(t, dtype=float)
+        t_ramp = self.ramp_time
+
+        if t_ramp <= 0:
+            return d_env
+
+        # Ramp up: t < t_ramp
+        mask_up = t < t_ramp
+        if self.ramp_type == "cosine":
+            d_env[mask_up] = (np.pi / (2.0 * t_ramp)) * np.sin(np.pi * t[mask_up] / t_ramp)
+        elif self.ramp_type == "gaussian":
+            sigma = t_ramp / 2.0
+            d_env[mask_up] = -((t[mask_up] - t_ramp) / (sigma**2)) * np.exp(-((t[mask_up] - t_ramp) ** 2) / (2.0 * sigma**2))
+        elif self.ramp_type == "tanh":
+            k = 2.0
+            u_up = k * (2.0 * t[mask_up] / t_ramp - 1.0)
+            d_env[mask_up] = (k / (t_ramp * np.tanh(k))) / (np.cosh(u_up) ** 2)
+
+        # Ramp down: t > duration - t_ramp
+        t_down_start = self.duration - t_ramp
+        mask_down = t > t_down_start
+        t_rel = t[mask_down] - t_down_start
+        if self.ramp_type == "cosine":
+            d_env[mask_down] = -(np.pi / (2.0 * t_ramp)) * np.sin(np.pi * t_rel / t_ramp)
+        elif self.ramp_type == "gaussian":
+            sigma = t_ramp / 2.0
+            d_env[mask_down] = -(t_rel / (sigma**2)) * np.exp(-(t_rel**2) / (2.0 * sigma**2))
+        elif self.ramp_type == "tanh":
+            k = 2.0
+            u_down = k * (2.0 * t_rel / t_ramp - 1.0)
+            d_env[mask_down] = -(k / (t_ramp * np.tanh(k))) / (np.cosh(u_down) ** 2)
+
+        return d_env
 
 
 class SechPulse(Pulse):
@@ -353,6 +434,9 @@ class SechPulse(Pulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -363,6 +447,9 @@ class SechPulse(Pulse):
             detune=detune,
             drag=drag,
             alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
@@ -398,6 +485,87 @@ class SechPulse(Pulse):
         return ds / (1.0 - s0)
 
 
+class SlepianPulse(Pulse):
+    r"""Discrete Prolate Spheroidal Sequences (DPSS / Slepian) window pulse.
+
+    Slepian pulses maximize energy concentration within a specified frequency bandwidth [-W, W],
+    offering optimal suppression of spectral leakage into adjacent qubits or resonator channels.
+
+    Args:
+        duration (float): Pulse duration in seconds (s).
+        amp (float): Pulse amplitude (normalized AWG amplitude V_0 in [-1.0, 1.0]).
+        nw (float): Time-half-bandwidth product NW (default: 3.0). Higher NW widens the
+            frequency mainlobe while providing deeper sidelobe suppression.
+        drag (float): Dimensionless DRAG coefficient beta (default: 0.0).
+        alpha (Optional[float]): Anharmonicity in Hz for DRAG quadrature scaling.
+        phase (float): Phase in radians.
+        detune (float): Detuning in Hz.
+        zero_offset (bool): Whether to subtract boundary baseline offset to ensure f(0) = f(tau) = 0.
+            Default: True.
+        noise_sigma (float): Standard deviation of additive noise. Default: 0.0.
+        noise_alpha (float): Exponent for noise PSD S(f) ~ (1/f)^alpha. Default: 0.0.
+        scale_noise (bool): Whether to scale additive noise by amplitude. Default: False.
+        name (Optional[str]): Pulse name.
+        length (Optional[float]): Alias for duration in seconds (s).
+    """
+
+    def __init__(
+        self,
+        duration: Optional[float] = None,
+        amp: float = 1.0,
+        nw: float = 3.0,
+        drag: float = 0.0,
+        alpha: Optional[float] = None,
+        phase: float = 0.0,
+        detune: float = 0.0,
+        zero_offset: bool = True,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
+        name: Optional[str] = None,
+        length: Optional[float] = None,
+    ):
+        super().__init__(
+            duration=duration,
+            amp=amp,
+            phase=phase,
+            detune=detune,
+            drag=drag,
+            alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
+            name=name,
+            length=length,
+        )
+        if nw <= 0:
+            raise ValueError(f"Time-half-bandwidth product nw must be positive, got {nw}")
+        self.nw = float(nw)
+        self.zero_offset = bool(zero_offset)
+
+        # Precompute high-resolution reference DPSS window and derivative for continuous interpolation
+        from scipy.signal.windows import dpss
+
+        self._n_ref = 2001
+        self._t_ref = np.linspace(0, self.duration, self._n_ref)
+        w = dpss(self._n_ref, NW=self.nw)
+        if self.zero_offset:
+            w0 = w[0]
+            w = (w - w0) / (np.max(w) - w0)
+        else:
+            w = w / np.max(w)
+        self._w_ref = w
+        self._dw_ref = np.gradient(self._w_ref, self._t_ref)
+
+    def envelope(self, t: np.ndarray) -> np.ndarray:
+        t = np.asarray(t)
+        return np.interp(t, self._t_ref, self._w_ref, left=0.0, right=0.0)
+
+    def envelope_derivative(self, t: np.ndarray, dt: Optional[float] = None) -> np.ndarray:
+        t = np.asarray(t)
+        return np.interp(t, self._t_ref, self._dw_ref, left=0.0, right=0.0)
+
+
 class CustomPulse(Pulse):
     """Pulse defined by an arbitrary user-supplied envelope function f(t).
 
@@ -422,6 +590,9 @@ class CustomPulse(Pulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -432,6 +603,9 @@ class CustomPulse(Pulse):
             detune=detune,
             drag=drag,
             alpha=alpha,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name,
             length=length,
         )
@@ -460,6 +634,9 @@ class DRAGPulse(GaussianPulse):
         alpha: Optional[float] = None,
         phase: float = 0.0,
         detune: float = 0.0,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -471,6 +648,9 @@ class DRAGPulse(GaussianPulse):
             alpha=alpha,
             phase=phase,
             detune=detune,
+            noise_sigma=noise_sigma,
+            noise_alpha=noise_alpha,
+            scale_noise=scale_noise,
             name=name or "DRAGPulse",
             length=length,
         )
@@ -487,6 +667,9 @@ class ScaledPulse(Pulse):
             detune=base_pulse.detune,
             drag=base_pulse.drag,
             alpha=base_pulse.alpha,
+            noise_sigma=base_pulse.noise_sigma,
+            noise_alpha=base_pulse.noise_alpha,
+            scale_noise=base_pulse.scale_noise,
             name=f"{base_pulse.name}*{scalar:.2f}",
         )
         self.base_pulse = base_pulse
@@ -680,6 +863,9 @@ def custom_pulse(
     alpha: Optional[float] = None,
     phase: float = 0.0,
     detune: float = 0.0,
+    noise_sigma: float = 0.0,
+    noise_alpha: float = 0.0,
+    scale_noise: bool = False,
     name: Optional[str] = None,
     length: Optional[float] = None,
 ) -> CustomPulse:
@@ -692,6 +878,43 @@ def custom_pulse(
         alpha=alpha,
         phase=phase,
         detune=detune,
+        noise_sigma=noise_sigma,
+        noise_alpha=noise_alpha,
+        scale_noise=scale_noise,
         name=name,
         length=length,
     )
+
+
+def slepian_pulse(
+    duration: Optional[float] = None,
+    amp: float = 1.0,
+    nw: float = 3.0,
+    drag: float = 0.0,
+    alpha: Optional[float] = None,
+    phase: float = 0.0,
+    detune: float = 0.0,
+    zero_offset: bool = True,
+    noise_sigma: float = 0.0,
+    noise_alpha: float = 0.0,
+    scale_noise: bool = False,
+    name: Optional[str] = None,
+    length: Optional[float] = None,
+) -> SlepianPulse:
+    """Create a Slepian (DPSS) window pulse."""
+    return SlepianPulse(
+        duration=duration,
+        amp=amp,
+        nw=nw,
+        drag=drag,
+        alpha=alpha,
+        phase=phase,
+        detune=detune,
+        zero_offset=zero_offset,
+        noise_sigma=noise_sigma,
+        noise_alpha=noise_alpha,
+        scale_noise=scale_noise,
+        name=name,
+        length=length,
+    )
+

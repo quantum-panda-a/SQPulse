@@ -140,3 +140,101 @@ def test_pulse_amp_range_warning():
     with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
         _ = p_base * 2.0
 
+
+def test_slepian_pulse():
+    """Test SlepianPulse boundary conditions, DRAG, and factory function."""
+    from sqpulse.pulses import SlepianPulse, slepian_pulse
+
+    # 1. Instance and factory
+    p = SlepianPulse(duration=40e-9, amp=0.8, nw=3.0)
+    p_factory = slepian_pulse(duration=40e-9, amp=0.8, nw=3.0)
+    t, wave = p.sample(dt=2e-10)
+    t_f, wave_f = p_factory.sample(dt=2e-10)
+
+    assert np.allclose(wave, wave_f)
+    # Endpoints with zero_offset=True should start and end at 0
+    assert np.isclose(wave[0].real, 0.0, atol=1e-6)
+    assert np.isclose(wave[-1].real, 0.0, atol=1e-6)
+    assert np.isclose(np.max(np.abs(wave)), 0.8, atol=1e-3)
+
+    # 2. DRAG on SlepianPulse
+    p_drag = SlepianPulse(duration=40e-9, amp=1.0, nw=3.0, drag=1.0)
+    _, wave_drag = p_drag.sample(dt=2e-10)
+    assert not np.allclose(wave_drag.imag, 0.0)
+    mid_idx = len(wave_drag) // 2
+    assert np.isclose(wave_drag.imag[mid_idx], 0.0, atol=1e-4)
+
+    # 3. Spectral leakage: Slepian pulse has substantially lower leakage than square pulse
+    p_sq = SquarePulse(duration=40e-9, amp=1.0)
+    leak_slepian = spectral_leakage(p, cutoff_freq=120e6, dt=1e-10)
+    leak_square = spectral_leakage(p_sq, cutoff_freq=120e6, dt=1e-10)
+    assert leak_slepian < leak_square
+
+    # 4. nw validation
+    with pytest.raises(ValueError, match="nw must be positive"):
+        SlepianPulse(duration=40e-9, nw=-1.0)
+
+
+def test_flattop_pulse_tanh():
+    """Test FlatTopPulse with tanh ramp and invalid ramp_type validation."""
+    p_tanh = FlatTopPulse(duration=60e-9, amp=1.0, ramp_time=15e-9, ramp_type="tanh")
+    t, c_wave = p_tanh.sample(dt=5e-10)
+
+    # Boundary conditions
+    assert np.isclose(c_wave[0].real, 0.0, atol=1e-6)
+    assert np.isclose(c_wave[-1].real, 0.0, atol=1e-6)
+
+    # Flat top region in middle should be 1.0
+    mid_idx = len(t) // 2
+    assert np.isclose(c_wave[mid_idx].real, 1.0, atol=1e-5)
+
+    # DRAG quadrature on FlatTop with tanh
+    p_tanh_drag = FlatTopPulse(duration=60e-9, amp=1.0, ramp_time=15e-9, ramp_type="tanh", drag=1.0)
+    _, wave_drag = p_tanh_drag.sample(dt=5e-10)
+    # Derivative is zero in the flat region
+    assert np.isclose(wave_drag.imag[mid_idx], 0.0, atol=1e-5)
+    # Derivative is non-zero during ramp-up and ramp-down
+    ramp_idx = int(round(7.5e-9 / 5e-10))
+    assert not np.isclose(wave_drag.imag[ramp_idx], 0.0, atol=1e-3)
+
+    # Invalid ramp_type should raise ValueError
+    with pytest.raises(ValueError, match="ramp_type must be 'cosine', 'gaussian', or 'tanh'"):
+        FlatTopPulse(duration=60e-9, ramp_type="invalid_ramp")
+
+
+def test_noise_injection():
+    """Test additive noise injection in Pulse.sample()."""
+    p = GaussianPulse(duration=40e-9, amp=1.0)
+
+    # 1. noise_sigma=0 -> identical to noiseless
+    t, wave_clean = p.sample(dt=5e-10)
+    _, wave_clean_explicit = p.sample(dt=5e-10, noise_sigma=0.0)
+    assert np.allclose(wave_clean, wave_clean_explicit)
+
+    # 2. noise_sigma > 0 -> noisy wave
+    _, wave_noisy1 = p.sample(dt=5e-10, noise_sigma=0.05, seed=42)
+    _, wave_noisy2 = p.sample(dt=5e-10, noise_sigma=0.05, seed=42)
+    _, wave_noisy3 = p.sample(dt=5e-10, noise_sigma=0.05, seed=99)
+
+    # Reproducibility with identical seed
+    assert np.allclose(wave_noisy1, wave_noisy2)
+    # Different seed produces different noise
+    assert not np.allclose(wave_noisy1, wave_noisy3)
+    # Residual noise standard deviation close to noise_sigma
+    residual_real = (wave_noisy1 - wave_clean).real
+    assert 0.02 < np.std(residual_real) < 0.08
+
+    # 3. 1/f colored noise (noise_alpha=1.0)
+    _, wave_pink = p.sample(dt=5e-10, noise_sigma=0.05, noise_alpha=1.0, seed=123)
+    assert len(wave_pink) == len(wave_clean)
+    assert not np.allclose(wave_pink, wave_clean)
+
+    # 4. Pulse-level noise configuration
+    p_noisy = GaussianPulse(duration=40e-9, amp=0.5, noise_sigma=0.04, noise_alpha=0.0, scale_noise=True)
+    assert p_noisy.noise_sigma == 0.04
+    assert p_noisy.scale_noise is True
+    _, w_p_noisy = p_noisy.sample(dt=5e-10, seed=7)
+    _, w_p_clean = GaussianPulse(duration=40e-9, amp=0.5).sample(dt=5e-10)
+    assert not np.allclose(w_p_noisy, w_p_clean)
+
+

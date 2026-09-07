@@ -7,6 +7,49 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+def generate_powerlaw_noise(
+    size: int,
+    alpha: float = 0.0,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """Generate 1D Gaussian noise with a power-law power spectral density S(f) proportional to (1/f)^alpha.
+
+    Args:
+        size: Number of time-domain noise samples.
+        alpha: Exponent for the noise PSD S(f) ~ (1/f)^alpha.
+            alpha = 0: white noise (flat PSD).
+            alpha = 1: pink noise (1/f noise).
+            alpha = 2: brown / red noise (1/f^2 random walk).
+        rng: Optional NumPy random Generator instance.
+
+    Returns:
+        1D numpy array of real noise samples with unit standard deviation (normalized).
+    """
+    if size <= 0:
+        return np.empty(0, dtype=float)
+    if rng is None:
+        rng = np.random.default_rng()
+    if alpha == 0.0 or size < 4:
+        return rng.standard_normal(size)
+
+    freqs = np.fft.rfftfreq(size)
+    scales = np.zeros_like(freqs)
+    scales[1:] = freqs[1:] ** (-alpha / 2.0)
+
+    real = rng.standard_normal(len(freqs)) * scales
+    imag = rng.standard_normal(len(freqs)) * scales
+    imag[0] = 0.0
+    if size % 2 == 0:
+        imag[-1] = 0.0
+
+    complex_spec = real + 1j * imag
+    noise = np.fft.irfft(complex_spec, n=size)
+    std = np.std(noise)
+    if std > 0:
+        noise = noise / std
+    return noise
+
+
 class Pulse(ABC):
     """Abstract base class representing a physical microwave or RF pulse in SI units.
 
@@ -19,6 +62,9 @@ class Pulse(ABC):
         drag (float): Dimensionless DRAG scaling factor beta (Q = -drag / (2*pi*alpha) * dI/dt).
             A value of drag=1.0 corresponds to the ideal first-order DRAG correction.
         alpha (float, optional): Reference Transmon anharmonicity in Hz (default -250.0e6 Hz).
+        noise_sigma (float): Standard deviation of additive Gaussian/colored noise. Default 0.0.
+        noise_alpha (float): Exponent for noise PSD S(f) ~ 1/f^alpha (0=white, 1=1/f pink). Default 0.0.
+        scale_noise (bool): Whether to scale additive noise by amplitude amp. Default False.
         name (str): Optional identifier for the pulse.
     """
 
@@ -30,6 +76,9 @@ class Pulse(ABC):
         detune: float = 0.0,
         drag: float = 0.0,
         alpha: Optional[float] = None,
+        noise_sigma: float = 0.0,
+        noise_alpha: float = 0.0,
+        scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
     ):
@@ -49,6 +98,9 @@ class Pulse(ABC):
         self.detune = float(detune)
         self.drag = float(drag)
         self.alpha = float(alpha) if alpha is not None else None
+        self.noise_sigma = float(noise_sigma)
+        self.noise_alpha = float(noise_alpha)
+        self.scale_noise = bool(scale_noise)
         self.name = name or self.__class__.__name__
 
         if abs(self._amp) > 1.0:
@@ -147,6 +199,10 @@ class Pulse(ABC):
         self,
         dt: Optional[float] = None,
         alpha: Optional[float] = None,
+        noise_sigma: Optional[float] = None,
+        noise_alpha: Optional[float] = None,
+        scale_noise: Optional[bool] = None,
+        seed: Optional[Union[int, np.random.Generator]] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Sample the complex baseband waveform Omega(t) = I(t) + i*Q(t).
 
@@ -154,6 +210,13 @@ class Pulse(ABC):
             dt: Sampling interval in seconds. If None, automatically chosen adaptively.
             alpha: Reference anharmonicity in Hz for DRAG quadrature scaling. If None,
                 uses self.alpha (or defaults to -250.0e6 Hz if self.alpha is None).
+            noise_sigma: Standard deviation of additive Gaussian/colored noise.
+                If None, defaults to self.noise_sigma.
+            noise_alpha: Exponent for noise PSD S(f) ~ (1/f)^alpha (0=white, 1=1/f pink).
+                If None, defaults to self.noise_alpha.
+            scale_noise: Whether to scale additive noise by amplitude amp.
+                If None, defaults to self.scale_noise.
+            seed: Optional integer seed or np.random.Generator for reproducible noise generation.
 
         Returns:
             t: 1D numpy array of sample times [0, dt, 2*dt, ..., duration] in seconds.
@@ -176,6 +239,28 @@ class Pulse(ABC):
             q_wave = self.amp * drag_scale * d_env
         else:
             q_wave = np.zeros_like(i_wave)
+
+        # Noise injection
+        sigma = self.noise_sigma if noise_sigma is None else float(noise_sigma)
+        if sigma > 0.0:
+            n_alpha = self.noise_alpha if noise_alpha is None else float(noise_alpha)
+            do_scale = self.scale_noise if scale_noise is None else bool(scale_noise)
+            if isinstance(seed, np.random.Generator):
+                rng = seed
+            elif seed is not None:
+                rng = np.random.default_rng(seed)
+            else:
+                rng = np.random.default_rng()
+
+            i_noise = sigma * generate_powerlaw_noise(len(i_wave), alpha=n_alpha, rng=rng)
+            q_noise = sigma * generate_powerlaw_noise(len(q_wave), alpha=n_alpha, rng=rng)
+
+            if do_scale:
+                i_wave = i_wave + self.amp * i_noise
+                q_wave = q_wave + self.amp * q_noise
+            else:
+                i_wave = i_wave + i_noise
+                q_wave = q_wave + q_noise
 
         c_wave = i_wave + 1j * q_wave
 
