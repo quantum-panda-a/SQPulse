@@ -108,3 +108,35 @@ def test_pulse_scaling():
     p = GaussianPulse(duration=30e-9, amp=0.2)
     p_scaled = p * 3.0
     assert np.isclose(p_scaled.amp, 0.6)
+
+
+def test_pulse_amp_range_warning():
+    """Verify warning is emitted when |amp| > 1.0, and no warning when amp in [-1, 1]."""
+    import warnings
+
+    # Valid amplitudes: within [-1.0, 1.0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        GaussianPulse(duration=20e-9, amp=1.0)
+        GaussianPulse(duration=20e-9, amp=-1.0)
+        GaussianPulse(duration=20e-9, amp=0.0)
+        GaussianPulse(duration=20e-9, amp=0.5)
+
+    # Exceeding amplitude > 1.0
+    with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
+        GaussianPulse(duration=20e-9, amp=1.2)
+
+    # Exceeding amplitude < -1.0
+    with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
+        GaussianPulse(duration=20e-9, amp=-1.5)
+
+    # Dynamic attribute assignment exceeding 1.0
+    p = GaussianPulse(duration=20e-9, amp=0.5)
+    with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
+        p.amp = 2.0
+
+    # Scaling pulse exceeding 1.0
+    p_base = GaussianPulse(duration=20e-9, amp=0.6)
+    with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
+        _ = p_base * 2.0
+

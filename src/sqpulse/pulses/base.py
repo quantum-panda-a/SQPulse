@@ -44,21 +44,41 @@ class Pulse(ABC):
         if duration <= 0:
             raise ValueError(f"Pulse duration must be positive, got {duration} s")
         self.duration = float(duration)
-        self.amp = float(amp)
+        self._amp = float(amp)
         self.phase = float(phase)
         self.detune = float(detune)
         self.drag = float(drag)
         self.alpha = float(alpha) if alpha is not None else None
         self.name = name or self.__class__.__name__
 
-        if abs(self.amp) > 10.0:
+        if abs(self._amp) > 1.0:
             import warnings
             warnings.warn(
-                f"Pulse amp={self.amp:.2e} is unusually large for an AWG control amplitude (typically V_0 in [-1, 1]). "
+                f"Pulse amp={self._amp:g} exceeds the normalized range [-1, 1]. "
+                f"In SQPulse, pulse amplitude represents normalized AWG control amplitude V_0 in [-1, 1]. "
                 f"If you intended to specify a physical Rabi frequency in rad/s, set the coupling on the Transmon "
                 f"via Transmon(..., omega_d=...) instead, and keep pulse amp as normalized V_0.",
                 UserWarning,
                 stacklevel=3,
+            )
+
+    @property
+    def amp(self) -> float:
+        """Peak normalized AWG waveform amplitude V_0 in [-1.0, 1.0]."""
+        return self._amp
+
+    @amp.setter
+    def amp(self, value: float) -> None:
+        self._amp = float(value)
+        if abs(self._amp) > 1.0:
+            import warnings
+            warnings.warn(
+                f"Pulse amp={self._amp:g} exceeds the normalized range [-1, 1]. "
+                f"In SQPulse, pulse amplitude represents normalized AWG control amplitude V_0 in [-1, 1]. "
+                f"If you intended to specify a physical Rabi frequency in rad/s, set the coupling on the Transmon "
+                f"via Transmon(..., omega_d=...) instead, and keep pulse amp as normalized V_0.",
+                UserWarning,
+                stacklevel=2,
             )
 
     @property

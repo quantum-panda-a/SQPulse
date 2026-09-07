@@ -38,7 +38,8 @@ def test_raw_omega_backward_compatibility():
     duration = 20e-9
     omega_raw = np.pi / duration  # raw rad/s
 
-    p_pi = SquarePulse(duration=duration, amp=omega_raw)
+    with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
+        p_pi = SquarePulse(duration=duration, amp=omega_raw)
     seq = PulseSequence().add(q_raw.drive, p_pi)
     res = Simulator.run(q_raw, seq, dt=2e-10)
     assert np.isclose(res.final_population(1), 1.0, atol=1e-3)

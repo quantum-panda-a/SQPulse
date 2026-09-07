@@ -75,8 +75,8 @@ def test_40ns_pulse_generation_and_adaptive_sample():
 
 def test_length_alias():
     """Verify that length parameter works identically to duration."""
-    p1 = GaussianPulse(duration=40 * ns, amp=1.5)
-    p2 = GaussianPulse(length=40 * ns, amp=1.5)
+    p1 = GaussianPulse(duration=40 * ns, amp=0.8)
+    p2 = GaussianPulse(length=40 * ns, amp=0.8)
 
     assert p1.duration == p2.duration
     assert p1.length == 40e-9
