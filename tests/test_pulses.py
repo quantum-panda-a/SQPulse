@@ -43,13 +43,20 @@ def test_square_pulse():
 
 
 def test_flattop_pulse():
-    p = FlatTopPulse(duration=50e-9, amp=1.0, ramp_time=10e-9, ramp_type="cosine")
-    t, c_wave = p.sample(dt=5e-10)
+    for ramp in ["cosine", "gaussian", "tanh"]:
+        p = FlatTopPulse(duration=50e-9, amp=1.0, ramp_time=10e-9, ramp_type=ramp)
+        t, c_wave = p.sample(dt=5e-10)
+        assert np.isclose(c_wave[0].real, 0.0, atol=1e-6), f"{ramp} ramp did not start at 0"
+        assert np.isclose(c_wave[-1].real, 0.0, atol=1e-6), f"{ramp} ramp did not end at 0"
+        # Flat top region in middle should be 1.0
+        mid_idx = len(t) // 2
+        assert np.isclose(c_wave[mid_idx].real, 1.0, atol=1e-5), f"{ramp} ramp middle amp mismatch"
+
+    # Test custom sigma for gaussian ramp
+    p_sigma = FlatTopPulse(duration=50e-9, amp=1.0, ramp_time=10e-9, ramp_type="gaussian", sigma=4e-9)
+    t, c_wave = p_sigma.sample(dt=5e-10)
     assert np.isclose(c_wave[0].real, 0.0, atol=1e-6)
     assert np.isclose(c_wave[-1].real, 0.0, atol=1e-6)
-    # Flat top region in middle should be 1.0
-    mid_idx = len(t) // 2
-    assert np.isclose(c_wave[mid_idx].real, 1.0, atol=1e-5)
 
 
 def test_drag_quadrature():
@@ -236,5 +243,131 @@ def test_noise_injection():
     _, w_p_noisy = p_noisy.sample(dt=5e-10, seed=7)
     _, w_p_clean = GaussianPulse(duration=40e-9, amp=0.5).sample(dt=5e-10)
     assert not np.allclose(w_p_noisy, w_p_clean)
+
+
+def test_idle_pulse():
+    from sqpulse.pulses import IdlePulse, idle_pulse
+
+    p = IdlePulse(duration=50e-9)
+    p_factory = idle_pulse(duration=50e-9)
+    t, wave = p.sample(dt=1e-9)
+    t_f, wave_f = p_factory.sample(dt=1e-9)
+
+    assert np.allclose(wave, 0.0)
+    assert np.allclose(wave_f, 0.0)
+    assert p.amp == 0.0
+    assert len(t) == 51
+
+
+def test_flattop_overshoot():
+    from sqpulse.pulses import FlatTopPulse
+
+    # Standard flattop without overshoot
+    p_standard = FlatTopPulse(duration=100e-9, amp=0.8, ramp_time=20e-9, overshoot_amp=0.0)
+    # Flattop with overshoot
+    p_os = FlatTopPulse(duration=100e-9, amp=0.8, ramp_time=20e-9, overshoot_amp=0.2, overshoot_len=15e-9)
+
+    t, w_std = p_standard.sample(dt=5e-10)
+    t, w_os = p_os.sample(dt=5e-10)
+
+    # Boundaries start and end at 0
+    assert np.isclose(w_os[0].real, 0.0, atol=1e-6)
+    assert np.isclose(w_os[-1].real, 0.0, atol=1e-6)
+
+    # In flat plateau (e.g. at 50 ns), overshoot has zero effect
+    mid_idx = len(t) // 2
+    assert np.isclose(w_os[mid_idx].real, 0.8, atol=1e-5)
+    assert np.isclose(w_std[mid_idx].real, 0.8, atol=1e-5)
+
+    # Peak in the rising shoulder is higher due to overshoot
+    peak_std = np.max(w_std.real)
+    peak_os = np.max(w_os.real)
+    assert peak_os > peak_std
+
+    # overshoot_len validation
+    with pytest.raises(ValueError, match="2 \\* overshoot_len"):
+        FlatTopPulse(duration=50e-9, overshoot_len=30e-9)
+
+
+def test_net_zero_pulse():
+    from sqpulse.pulses import NetZeroPulse, net_zero_pulse
+
+    # 1. ERF ramp type
+    p_erf = NetZeroPulse(duration=60e-9, amp=0.9, ramp_type="erf")
+    t, w_erf = p_erf.sample(dt=2e-10)
+
+    # Boundaries zero
+    assert np.isclose(w_erf[0].real, 0.0, atol=1e-5)
+    assert np.isclose(w_erf[-1].real, 0.0, atol=1e-5)
+
+    # Net-zero integral condition: \int V(t) dt == 0
+    integral_erf = np.trapezoid(w_erf.real, t)
+    assert np.isclose(integral_erf, 0.0, atol=1e-12)
+
+    # Positive peak in 1st half, negative trough in 2nd half
+    mid = len(t) // 2
+    assert np.max(w_erf[:mid].real) > 0.8
+    assert np.min(w_erf[mid:].real) < -0.8
+
+    # 2. Cosine ramp type
+    p_cos = net_zero_pulse(duration=60e-9, amp=1.0, ramp_type="cosine")
+    t_c, w_cos = p_cos.sample(dt=2e-10)
+    integral_cos = np.trapezoid(w_cos.real, t_c)
+    assert np.isclose(integral_cos, 0.0, atol=1e-12)
+    assert np.isclose(w_cos[0].real, 0.0, atol=1e-6)
+    assert np.isclose(w_cos[-1].real, 0.0, atol=1e-6)
+
+    # 3. Net-zero with overshoot
+    p_os = NetZeroPulse(duration=60e-9, amp=0.8, overshoot_amp=0.15, overshoot_len=5e-9)
+    t_os, w_os = p_os.sample(dt=2e-10)
+    integral_os = np.trapezoid(w_os.real, t_os)
+    assert np.isclose(integral_os, 0.0, atol=1e-12)
+
+
+def test_cosine_hd2_drag_pulse():
+    from sqpulse.pulses import CosineHD2DRAGPulse, cosine_hd2_drag_pulse
+
+    # Instance & factory
+    p = CosineHD2DRAGPulse(duration=20e-9, amp=1.0, alpha=-250e6, f_suppress=90e6)
+    p_f = cosine_hd2_drag_pulse(duration=20e-9, amp=1.0, alpha=-250e6, f_suppress=90e6)
+    t, wave = p.sample(dt=2e-10)
+    _, wave_f = p_f.sample(dt=2e-10)
+    assert np.allclose(wave, wave_f)
+
+    # Boundary conditions: both I and Q start and end at 0
+    assert np.isclose(wave[0].real, 0.0, atol=1e-6)
+    assert np.isclose(wave[-1].real, 0.0, atol=1e-6)
+    assert np.isclose(wave[0].imag, 0.0, atol=1e-6)
+    assert np.isclose(wave[-1].imag, 0.0, atol=1e-6)
+
+    # Q quadrature at midpoint should be 0 due to antisymmetry
+    mid = len(wave) // 2
+    assert np.isclose(wave[mid].imag, 0.0, atol=1e-5)
+
+    # Non-zero Q elsewhere
+    assert not np.allclose(wave.imag, 0.0)
+
+    # Beta2 sensitivity: higher f_suppress lowers beta2
+    p_high_suppress = CosineHD2DRAGPulse(duration=20e-9, amp=1.0, f_suppress=200e6)
+    assert p_high_suppress.beta2 < p.beta2
+
+
+def test_phase_modulated_sin_pulse():
+    from sqpulse.pulses import PhaseModulatedSinPulse, phase_modulated_sin_pulse
+
+    p = PhaseModulatedSinPulse(duration=40e-9, amp=0.8, mod_freq=50e6)
+    p_f = phase_modulated_sin_pulse(duration=40e-9, amp=0.8, mod_freq=50e6)
+    t, wave = p.sample(dt=2e-10)
+    _, wave_f = p_f.sample(dt=2e-10)
+    assert np.allclose(wave, wave_f)
+
+    # Envelope boundaries: sin(0)=0 and sin(pi)=0
+    assert np.isclose(np.abs(wave[0]), 0.0, atol=1e-6)
+    assert np.isclose(np.abs(wave[-1]), 0.0, atol=1e-6)
+
+    # The phase modulation should create both real and imaginary components
+    assert not np.allclose(wave.real, 0.0)
+    assert not np.allclose(wave.imag, 0.0)
+
 
 
