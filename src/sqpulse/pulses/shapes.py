@@ -955,7 +955,7 @@ class PhaseModulatedSinPulse(Pulse):
 
     .. math::
         f(t) = \sin\left(\frac{\pi t}{\tau}\right) \\
-        \phi(t) = -2 (2\pi f_{\text{mod}} \tau) \sin\left(\frac{\pi t}{\tau}\right)
+        \phi(t) = -2 (f_{\text{mod}} \tau) \sin\left(\frac{\pi t}{\tau}\right)
 
     Args:
         duration (float): Pulse duration in seconds (s).
@@ -968,6 +968,7 @@ class PhaseModulatedSinPulse(Pulse):
         scale_noise (bool): Whether to scale additive noise by amplitude. Default: False.
         name (Optional[str]): Pulse name.
         length (Optional[float]): Alias for duration in seconds (s).
+        omega_0 (Optional[float]): Alias for mod_freq in Hz.
     """
 
     def __init__(
@@ -982,6 +983,7 @@ class PhaseModulatedSinPulse(Pulse):
         scale_noise: bool = False,
         name: Optional[str] = None,
         length: Optional[float] = None,
+        omega_0: Optional[float] = None,
     ):
         super().__init__(
             duration=duration,
@@ -996,7 +998,10 @@ class PhaseModulatedSinPulse(Pulse):
             name=name,
             length=length,
         )
-        self.mod_freq = float(mod_freq)
+        if omega_0 is not None:
+            self.mod_freq = float(omega_0)
+        else:
+            self.mod_freq = float(mod_freq)
 
     def envelope(self, t: np.ndarray) -> np.ndarray:
         t = np.asarray(t, dtype=float)
@@ -1018,7 +1023,7 @@ class PhaseModulatedSinPulse(Pulse):
 
         theta = np.pi * t / self.duration
         env = np.sin(theta)
-        mod_phase = -2.0 * (2.0 * np.pi * self.mod_freq * self.duration) * np.sin(theta)
+        mod_phase = -2.0 * (self.mod_freq * self.duration) * np.sin(theta)
 
         c_wave = self.amp * env * np.exp(1j * mod_phase)
         i_wave = c_wave.real
@@ -1501,6 +1506,7 @@ def phase_modulated_sin_pulse(
     scale_noise: bool = False,
     name: Optional[str] = None,
     length: Optional[float] = None,
+    omega_0: Optional[float] = None,
 ) -> PhaseModulatedSinPulse:
     """Create a phase-modulated sine pulse for adiabatic / parametric transitions."""
     return PhaseModulatedSinPulse(
@@ -1514,6 +1520,7 @@ def phase_modulated_sin_pulse(
         scale_noise=scale_noise,
         name=name,
         length=length,
+        omega_0=omega_0,
     )
 
 

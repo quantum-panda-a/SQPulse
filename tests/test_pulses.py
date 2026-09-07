@@ -369,5 +369,39 @@ def test_phase_modulated_sin_pulse():
     assert not np.allclose(wave.real, 0.0)
     assert not np.allclose(wave.imag, 0.0)
 
+    # Test omega_0 alias
+    p_alias = PhaseModulatedSinPulse(duration=40e-9, amp=0.8, omega_0=50e6)
+    _, wave_alias = p_alias.sample(dt=2e-10)
+    assert np.allclose(wave, wave_alias)
+
+    # Verify peak phase depth at pulse center t = tau/2:
+    # phi(tau/2) = -2 * mod_freq * duration * sin(pi/2) = -2 * mod_freq * duration
+    expected_peak_phase = -2.0 * 50e6 * 40e-9
+    mid_idx = len(t) // 2
+    actual_phase_mid = np.angle(wave[mid_idx])
+    # Phase unwrapped / modulo 2pi
+    assert np.isclose(actual_phase_mid, np.angle(np.exp(1j * expected_peak_phase)), atol=1e-3)
+
+    # Verify rapid adiabatic passage flat-top spectroscopy behaviour
+    from sqpulse import Transmon
+    from sqpulse.experiments import QubitSpectroscopyExperiment
+
+    q = Transmon("q_test", f_q=5.0e9, alpha=-250e6, omega_d=2 * np.pi * 50e6, levels=2)
+    p_rap = PhaseModulatedSinPulse(duration=400e-9, amp=1.0, mod_freq=50e6)
+    res = QubitSpectroscopyExperiment.run(
+        transmon=q,
+        pulse=p_rap,
+        freq_range=(4.9e9, 5.1e9),
+        num_points=21,
+        dt=1e-9,
+        fit=False,
+    )
+    # At center (5.0 GHz) population should be near 1.0
+    p1_center = res.p1_vals[len(res.freqs) // 2]
+    assert p1_center > 0.99
+    # Outside the +/- 50 MHz band (e.g. at 4.9 GHz and 5.1 GHz), population should drop near 0
+    assert res.p1_vals[0] < 0.05
+    assert res.p1_vals[-1] < 0.05
+
 
 

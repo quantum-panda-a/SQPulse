@@ -21,7 +21,7 @@ class Transmon:
         name (str): Unique name of this transmon (e.g. 'q0').
         f_q (float): Qubit 0-1 transition frequency in Hz (e.g. 5.0e9 for 5 GHz).
         alpha (float): Anharmonicity in Hz (typically negative, e.g. -250e6 for -250 MHz).
-        levels (int): Number of Hilbert space levels to model (default 3: |0>, |1>, |2>).
+        levels (int): Number of Hilbert space levels to model (default 4: |0>, |1>, |2>, |3>).
         t1 (float): Energy relaxation time T1 in seconds (default inf).
         t2 (float): Dephasing time T2 in seconds (default inf).
         thermal_population (float): Excited state thermal occupation n_th (default 0.0).
@@ -34,7 +34,7 @@ class Transmon:
         name: str = "q0",
         f_q: float = 5.0e9,
         alpha: float = -250.0e6,
-        levels: int = 3,
+        levels: int = 4,
         t1: float = np.inf,
         t2: float = np.inf,
         thermal_population: float = 0.0,
@@ -205,7 +205,7 @@ class Transmon:
         alpha: float = -250.0e6,
         attenuation_dB: float = -60.0,
         v_max: float = 1.0,
-        levels: int = 3,
+        levels: int = 4,
         t1: float = np.inf,
         t2: float = np.inf,
         thermal_population: float = 0.0,
