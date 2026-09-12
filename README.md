@@ -52,6 +52,77 @@
 
 ---
 
+## Transmon 物理建模与数学公式
+
+SQPulse 中的 `Transmon` 模型以经典 circuit QED 为基础，严格采用国际单位制（SI units）。其完整物理模型与计算公式如下：
+
+### 1. 静态哈密顿量（旋转坐标系）
+
+在载波参考频率为 $f_d$（$\text{Hz}$）的旋转坐标系下，经过旋转波近似（RWA）后，多能级 Transmon 的静态哈密顿量为 Duffing / Kerr 非线性模型：
+
+$$H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2 \quad (\text{rad/s})$$
+
+* $f_q$：Qubit $0 \leftrightarrow 1$ 跃迁频率（单位：$\text{Hz}$，例如 $5.0 \times 10^9\text{ Hz}$）。
+* $\Delta = f_q - f_d$：驱动失谐量（单位：$\text{Hz}$）。在共振驱动参考系下（默认 $f_d = f_q$），失谐项为零。
+* $\alpha$：非谐性（Anharmonicity，单位：$\text{Hz}$，通常为负值，如 $-250 \times 10^6\text{ Hz}$）。
+* $a, a^\dagger$：湮灭算符与产生算符，维度由截断能级 `levels` 决定（默认 `levels=4`）。
+* 对 Fock 态 $|n\rangle$，本征能量为：$E_n = 2\pi (f_q - f_d) n + \pi \alpha n(n-1)$。由此可知相邻能级跃迁频率差为：
+  * $\omega_{01} = 2\pi (f_q - f_d)$
+  * $\omega_{12} = \omega_{01} + 2\pi \alpha$（两能级差相差 $2\pi \alpha$）。
+
+### 2. 微波驱动哈密顿量（RWA 下）
+
+微波驱动信号由 AWG 产生的同相基带包络 $I(t)$ 和正交基带包络 $Q(t)$ 调制，在旋转坐标系下的含时驱动哈密顿量为：
+
+$$H_d(t) = \frac{1}{2} \Omega_d \Big[ I(t) (a + a^\dagger) + Q(t) i(a^\dagger - a) \Big] = I(t) H_{\text{drive},x} + Q(t) H_{\text{drive},y} \quad (\text{rad/s})$$
+
+其中：
+* $H_{\text{drive},x} = \frac{1}{2} \Omega_d (a + a^\dagger)$：对应 Bloch 球上的绕 $X$ 轴驱动算符。
+* $H_{\text{drive},y} = \frac{1}{2} \Omega_d i(a^\dagger - a)$：对应 Bloch 球上的绕 $Y$ 轴驱动算符。
+* $\Omega_d$ (`omega_d`)：物理驱动耦合强度（单位：$\text{rad/s}$，默认 $2\pi \times 50\text{ MHz} \approx 3.14 \times 10^8\text{ rad/s}$）。
+* $I(t), Q(t)$：脉冲序列输出的归一化 AWG 电压信号（无量纲，标称范围 $[-1, 1]$）。
+
+系统总哈密顿量即为：
+$$H(t) = H_0 + I(t) H_{\text{drive},x} + Q(t) H_{\text{drive},y}$$
+
+### 3. 电路物理参数推导驱动强度 (`Transmon.from_circuit`)
+
+在超导量子芯片中，$\Omega_d$ 可由芯片版图电容参数、线路衰减及 AWG 最大输出电压直接解析推导（参考 Krantz et al., 2019）：
+
+1. **总有效电容**：
+   $$C_\Sigma = C_g + C_d$$
+   （$C_g$ 为对地并联电容，$C_d$ 为微波驱动线对量子比特的耦合电容）
+2. **零点电荷涨落（Zero-point charge fluctuation）**：
+   $$Q_{\text{zpf}} = \sqrt{\frac{\hbar \omega_q C_\Sigma}{2}}, \quad \omega_q = 2\pi f_q$$
+3. **芯片端单位驱动电压耦合率（On-chip coupling rate）**：
+   $$\Omega_{\text{chip}} = \frac{C_d}{C_\Sigma} \frac{Q_{\text{zpf}}}{\hbar} \quad \left[\frac{\text{rad}}{\text{s}\cdot\text{V}}\right]$$
+4. **微波线路总衰减因子**：
+   $$\alpha_{\text{line}} = 10^{\text{attenuation\_dB} / 20}$$
+5. **有效物理驱动耦合强度**：
+   $$\Omega_d = \Omega_{\text{chip}} \cdot \alpha_{\text{line}} \cdot V_{\text{max}} \quad (\text{rad/s})$$
+
+### 4. 开放系统 Lindblad 耗散主方程
+
+考虑退相干效应时，系统密度矩阵 $\rho(t)$ 的动力学演化满足 Lindblad 主方程：
+
+$$\frac{d\rho}{dt} = -i [H(t), \rho] + \sum_k \mathcal{D}[L_k]\rho$$
+
+其中 Lindblad 超算符定义为：
+$$\mathcal{D}[L]\rho = L \rho L^\dagger - \frac{1}{2} \big\{ L^\dagger L, \rho \big\}$$
+
+模型包含的三个主要耗散通道及其坍缩算符（Collapse Operators）$L_k$：
+* **能量弛豫（$T_1$ 衰减）**：
+  $$L_{\text{down}} = \sqrt{\frac{1 + n_{\text{th}}}{T_1}} a$$
+* **热平衡激发（$n_{\text{th}}$）**：
+  $$L_{\text{up}} = \sqrt{\frac{n_{\text{th}}}{T_1}} a^\dagger$$
+* **纯退相位（Pure Dephasing，$T_\phi$）**：
+  根据横向弛豫时间 $T_2$ 满足的物理关系 $\frac{1}{T_2} = \frac{1}{2 T_1} + \frac{1}{T_\phi}$，换算得到纯退相位速率：
+  $$\Gamma_\phi = \frac{1}{T_2} - \frac{1}{2 T_1}$$
+  纯退相位坍缩算符为：
+  $$L_\phi = \sqrt{2 \Gamma_\phi} a^\dagger a = \sqrt{2 \left(\frac{1}{T_2} - \frac{1}{2 T_1}\right)} \hat{n}$$
+
+---
+
 ## 快速上手
 
 ### 1. 查看脉冲时域与频域特征

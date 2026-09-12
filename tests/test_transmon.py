@@ -49,11 +49,10 @@ def test_transmon_collapse_operators():
     assert len(c_ops) == 2  # decay + dephasing
 
 
-def test_transmon_drive_coupling():
+def test_transmon_omega_d():
     # Default omega_d should be 2*pi * 50 MHz
     q = Transmon("q0", f_q=5.0e9)
     assert np.isclose(q.omega_d, 2.0 * np.pi * 50.0e6)
-    assert np.isclose(q.drive_coupling, q.omega_d)
 
     # Custom omega_d
     custom_omega = 2.0 * np.pi * 30.0e6

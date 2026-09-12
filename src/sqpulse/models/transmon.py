@@ -26,7 +26,6 @@ class Transmon:
         t2 (float): Dephasing time T2 in seconds (default inf).
         thermal_population (float): Excited state thermal occupation n_th (default 0.0).
         omega_d (Optional[float]): Physical drive coupling strength in rad/s (defaults to 2*pi*50 MHz = 3.14e8 rad/s).
-        drive_coupling (Optional[float]): Alias / backward-compatible argument for omega_d.
     """
 
     def __init__(
@@ -39,7 +38,6 @@ class Transmon:
         t2: float = np.inf,
         thermal_population: float = 0.0,
         omega_d: Optional[float] = None,
-        drive_coupling: Optional[float] = None,
     ):
         if levels < 2:
             raise ValueError(f"Transmon levels must be >= 2, got {levels}")
@@ -53,13 +51,9 @@ class Transmon:
 
         if omega_d is not None:
             self.omega_d = float(omega_d)
-        elif drive_coupling is not None:
-            self.omega_d = float(drive_coupling)
         else:
             # Default physical drive coupling: 2*pi * 50 MHz (rad/s)
             self.omega_d = 2.0 * np.pi * 50.0e6
-
-        self.drive_coupling = self.omega_d
 
         # Drive channel name
         self.drive = f"{self.name}.drive"
