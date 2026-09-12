@@ -1,7 +1,7 @@
 """Transmon qubit physical model for SQPulse in SI units."""
 
 from __future__ import annotations
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import numpy as np
 import qutip
 
@@ -36,6 +36,8 @@ class Transmon:
         t2 (float): Dephasing time T2 in seconds (default inf).
         thermal_population (float): Excited state thermal occupation n_th (default 0.0).
         omega_d (Optional[float]): Physical drive coupling strength in rad/s (defaults to 2*pi*50 MHz = 3.14e8 rad/s).
+        v_phi0 (Optional[float]): Voltage required on Z line to induce one flux quantum Phi_0 in V / Phi_0 (default None).
+            When None, pulse amplitudes on the Z channel are treated directly as flux in units of Phi_0.
     """
 
     def __init__(
@@ -50,6 +52,7 @@ class Transmon:
         t2: float = np.inf,
         thermal_population: float = 0.0,
         omega_d: Optional[float] = None,
+        v_phi0: Optional[float] = None,
     ):
         if levels < 2:
             raise ValueError(f"Transmon levels must be >= 2, got {levels}")
@@ -65,6 +68,7 @@ class Transmon:
         self.t1 = float(t1)
         self.t2 = float(t2)
         self.thermal_population = float(thermal_population)
+        self.v_phi0 = float(v_phi0) if v_phi0 is not None else None
 
         if omega_d is not None:
             self.omega_d = float(omega_d)
@@ -138,6 +142,30 @@ class Transmon:
     def H_drive_y(self) -> qutip.Qobj:
         """Drive operator for Quadrature (Q) quadrature: 0.5 * i(a^dagger - a)."""
         return self._H_drive_y
+
+    @property
+    def g_flux(self) -> float:
+        """Flux transfer gain in units of Phi_0 / V (equal to 1 / v_phi0 if v_phi0 is set, else 1.0)."""
+        return (1.0 / self.v_phi0) if self.v_phi0 is not None else 1.0
+
+    def voltage_to_flux(self, voltage: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """Convert voltage signal on the Z line (in Volts) to magnetic flux in units of Phi_0.
+
+        If v_phi0 is None, voltage is treated directly as flux in units of Phi_0.
+        """
+        if self.v_phi0 is None:
+            return voltage
+        return voltage / self.v_phi0
+
+    def flux_to_voltage(self, flux: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """Convert magnetic flux in units of Phi_0 to required voltage signal on the Z line (in Volts).
+
+        If v_phi0 is None, returns flux directly.
+        """
+        if self.v_phi0 is None:
+            return flux
+        return flux * self.v_phi0
+
 
     def fock(self, n: int = 0) -> qutip.Qobj:
         """Return the Fock state |n> as a Ket."""
@@ -260,9 +288,15 @@ class Transmon:
         t1: float = np.inf,
         t2: float = np.inf,
         thermal_population: float = 0.0,
+        d: float = 1.0,
+        flux_offset: float = 0.0,
+        m_mutual: Optional[float] = None,
+        attenuation_z_dB: float = -20.0,
+        z0: float = 50.0,
+        v_phi0: Optional[float] = None,
         **kwargs,
     ) -> Transmon:
-        r"""Construct a Transmon model with drive coupling omega_d derived from circuit parameters.
+        r"""Construct a Transmon model with drive coupling omega_d and flux period voltage v_phi0 derived from circuit parameters.
 
         According to circuit QED capacitive drive theory (Krantz et al., 2019):
         .. math::
@@ -273,6 +307,13 @@ class Transmon:
             \alpha_{\text{line}} = 10^{\text{attenuation\_dB} / 20}
             \Omega_d = \Omega_{\text{chip}} \cdot \alpha_{\text{line}} \cdot V_{\text{max}} \quad [\text{rad/s}]
 
+        For Z flux line mutual coupling to the SQUID loop:
+        .. math::
+            \alpha_{\text{line}, z} = 10^{\text{attenuation\_z\_dB} / 20}
+            I_{\text{chip}} = \frac{V_{\text{AWG}} \cdot \alpha_{\text{line}, z}}{Z_0}
+            \Phi = M \cdot I_{\text{chip}}
+            V_{\Phi_0} = \frac{\Phi_0 Z_0}{M \cdot \alpha_{\text{line}, z}} \quad [\text{V}/\Phi_0]
+
         Args:
             name: Transmon qubit name.
             c_d: Drive line coupling capacitance in Farads (default 5e-17 F = 0.05 fF).
@@ -281,13 +322,19 @@ class Transmon:
             alpha: Anharmonicity in Hz (e.g. -250e6 Hz).
             attenuation_dB: Total microwave line attenuation from AWG to chip in dB (default: -60.0 dB).
             v_max: Maximum output voltage of the AWG in Volts (default: 1.0 V).
-            levels: Number of Hilbert space levels (default: 3).
+            levels: Number of Hilbert space levels (default: 4).
             t1: T1 relaxation time in seconds.
             t2: T2 dephasing time in seconds.
             thermal_population: Thermal population.
+            d: SQUID junction asymmetry parameter in [0.0, 1.0] (default 1.0 for single junction).
+            flux_offset: Static flux bias in units of Phi_0 (default 0.0).
+            m_mutual: Mutual inductance between Z flux line and SQUID loop in Henry (e.g. 2.5e-12 H = 2.5 pH).
+            attenuation_z_dB: Total attenuation on Z flux line from AWG/DAC to chip in dB (default: -20.0 dB).
+            z0: Characteristic transmission line impedance in Ohms (default: 50.0 Ohm).
+            v_phi0: Explicit flux period voltage in V/Phi_0. Overrides m_mutual if provided.
 
         Returns:
-            Transmon instance with physically calculated omega_d.
+            Transmon instance with physically calculated omega_d and v_phi0.
         """
         import scipy.constants as const
         hbar = const.hbar
@@ -298,15 +345,24 @@ class Transmon:
         alpha_line = 10.0 ** (float(attenuation_dB) / 20.0)
         omega_d = omega_chip * alpha_line * float(v_max)
 
+        resolved_v_phi0 = v_phi0
+        if resolved_v_phi0 is None and m_mutual is not None:
+            phi_0 = const.h / (2.0 * const.e)
+            alpha_line_z = 10.0 ** (float(attenuation_z_dB) / 20.0)
+            resolved_v_phi0 = (phi_0 * float(z0)) / (float(m_mutual) * alpha_line_z)
+
         instance = cls(
             name=name,
             f_q=f_q,
             alpha=alpha,
+            d=d,
+            flux_offset=flux_offset,
             levels=levels,
             t1=t1,
             t2=t2,
             thermal_population=thermal_population,
             omega_d=omega_d,
+            v_phi0=resolved_v_phi0,
             **kwargs,
         )
         instance.c_d = float(c_d)
@@ -316,11 +372,15 @@ class Transmon:
         instance.omega_chip = omega_chip
         instance.attenuation_dB = float(attenuation_dB)
         instance.v_max = float(v_max)
+        instance.m_mutual = float(m_mutual) if m_mutual is not None else None
+        instance.attenuation_z_dB = float(attenuation_z_dB)
+        instance.z0 = float(z0)
         return instance
 
     def __repr__(self) -> str:
         d_str = f", d={self.d:.2f}" if self.d < 1.0 else ""
+        v_phi0_str = f", v_phi0={self.v_phi0:.3f}V/Phi_0" if self.v_phi0 is not None else ""
         return (
-            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz{d_str}, "
+            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz{d_str}{v_phi0_str}, "
             f"levels={self.levels}, omega_d={self.omega_d:.3e}rad/s, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
         )

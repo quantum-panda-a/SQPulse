@@ -125,3 +125,55 @@ def test_transmon_squid_flux_tuning():
         f_prev = f_curr
 
 
+def test_transmon_v_phi0_conversion():
+    # 1. Default when v_phi0 is None (dimensionless Phi_0 mode)
+    q_def = Transmon("q_def")
+    assert q_def.v_phi0 is None
+    assert q_def.g_flux == 1.0
+    assert q_def.voltage_to_flux(0.2) == 0.2
+    assert q_def.flux_to_voltage(0.2) == 0.2
+
+    # 2. When v_phi0 is explicitly specified (e.g. 0.8 V / Phi_0)
+    q_v = Transmon("q_v", v_phi0=0.8)
+    assert q_v.v_phi0 == 0.8
+    assert np.isclose(q_v.g_flux, 1.25)
+    assert np.isclose(q_v.voltage_to_flux(0.4), 0.5)
+    assert np.isclose(q_v.flux_to_voltage(0.5), 0.4)
+
+    # Array conversions
+    v_arr = np.array([0.0, 0.2, 0.4, 0.8])
+    phi_arr = q_v.voltage_to_flux(v_arr)
+    assert np.allclose(phi_arr, [0.0, 0.25, 0.5, 1.0])
+    assert np.allclose(q_v.flux_to_voltage(phi_arr), v_arr)
+
+    # Repr includes v_phi0
+    assert "v_phi0=0.800V/Phi_0" in repr(q_v)
+
+
+def test_transmon_from_circuit_with_z_line():
+    import scipy.constants as const
+    phi_0 = const.h / (2.0 * const.e)
+
+    m_mutual = 2.5e-12  # 2.5 pH
+    atten_z = -20.0     # -20 dB
+    z0 = 50.0
+
+    q = Transmon.from_circuit(
+        name="q_circ",
+        d=0.25,
+        m_mutual=m_mutual,
+        attenuation_z_dB=atten_z,
+        z0=z0,
+    )
+
+    alpha_z = 10.0 ** (atten_z / 20.0)
+    expected_v_phi0 = (phi_0 * z0) / (m_mutual * alpha_z)
+
+    assert np.isclose(q.v_phi0, expected_v_phi0)
+    assert q.m_mutual == m_mutual
+    assert q.attenuation_z_dB == atten_z
+    assert q.z0 == z0
+    assert q.d == 0.25
+
+
+

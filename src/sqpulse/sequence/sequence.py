@@ -202,7 +202,8 @@ class PulseSequence:
         # 2. Collect Z flux waveform from z line
         z_ch_name = normalize_channel(transmon.z)
         if z_ch_name in waveforms:
-            flux_wave = waveforms[z_ch_name].real
+            raw_flux_wave = waveforms[z_ch_name].real
+            flux_wave = transmon.voltage_to_flux(raw_flux_wave)
             has_flux_pulse = True
         else:
             flux_wave = np.zeros_like(times, dtype=float)

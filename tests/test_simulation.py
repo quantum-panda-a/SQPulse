@@ -108,3 +108,61 @@ def test_dynamic_flux_pulse_phase_accumulation():
     # Because of the pi phase shift, the second pi/2 rotation returns state to |0>
     assert np.isclose(res_flux.final_population(0), 1.0, atol=1e-2)
 
+
+def test_flux_pulsed_spectroscopy():
+    """Verify that a Z flux pulse detunes a tunable Transmon and XY microwave probe detects resonance at shifted frequency."""
+    from sqpulse.pulses import FlatTopPulse
+    from sqpulse import Simulator
+
+    # Tunable transmon (d=0.25)
+    q = Transmon("q_spec", f_q=5.0e9, alpha=-250e6, d=0.25, levels=3)
+    phi_bias = 0.15
+    f_expected = q.frequency_at_flux(phi_bias)
+
+    # Multi-channel pulse sequence: Z pulse + concurrent XY probe
+    seq = PulseSequence(name="flux_qubit_spec")
+    seq.add(q.z, FlatTopPulse(duration=120e-9, amp=phi_bias, ramp_time=10e-9))
+    seq.delay(q.xy, 10e-9)
+    seq.add(q.xy, FlatTopPulse(duration=100e-9, amp=0.04, ramp_time=5e-9))
+
+    # Sweep XY carrier frequencies around shifted frequency
+    freqs = np.linspace(f_expected - 40e6, f_expected + 40e6, 21)
+    p1_vals = [Simulator.run(q, seq, dt=1e-9, f_d=float(fd)).final_population(1) for fd in freqs]
+
+    f_peak = freqs[np.argmax(p1_vals)]
+    assert np.isclose(f_peak, f_expected, atol=5e6)
+    assert np.max(p1_vals) > 0.25
+
+
+def test_v_phi0_voltage_pulse_simulation():
+    """Verify that a Z voltage pulse scaled by v_phi0 yields identical dynamics to a direct flux pulse."""
+    from sqpulse.pulses import FlatTopPulse
+    from sqpulse import Simulator
+
+    v_phi0 = 0.8  # 0.8 V per Phi_0
+    v_target = 0.12  # 0.12 V -> 0.15 Phi_0
+    phi_target = 0.15
+
+    q_volt = Transmon("q_volt", f_q=5.0e9, alpha=-250e6, d=0.25, levels=3, v_phi0=v_phi0)
+    q_flux = Transmon("q_flux", f_q=5.0e9, alpha=-250e6, d=0.25, levels=3, v_phi0=None)
+
+    seq_volt = PulseSequence(name="seq_volt")
+    seq_volt.add(q_volt.z, FlatTopPulse(duration=120e-9, amp=v_target, ramp_time=10e-9))
+    seq_volt.delay(q_volt.xy, 10e-9)
+    seq_volt.add(q_volt.xy, FlatTopPulse(duration=100e-9, amp=0.04, ramp_time=5e-9))
+
+    seq_flux = PulseSequence(name="seq_flux")
+    seq_flux.add(q_flux.z, FlatTopPulse(duration=120e-9, amp=phi_target, ramp_time=10e-9))
+    seq_flux.delay(q_flux.xy, 10e-9)
+    seq_flux.add(q_flux.xy, FlatTopPulse(duration=100e-9, amp=0.04, ramp_time=5e-9))
+
+    f_target = q_volt.frequency_at_flux(phi_target)
+    res_volt = Simulator.run(q_volt, seq_volt, dt=1e-9, f_d=float(f_target))
+    res_flux = Simulator.run(q_flux, seq_flux, dt=1e-9, f_d=float(f_target))
+
+    assert np.isclose(res_volt.final_population(0), res_flux.final_population(0), atol=1e-6)
+    assert np.isclose(res_volt.final_population(1), res_flux.final_population(1), atol=1e-6)
+    assert np.isclose(res_volt.final_population(2), res_flux.final_population(2), atol=1e-6)
+
+
+

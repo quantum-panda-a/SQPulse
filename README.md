@@ -49,6 +49,7 @@
    - **Amplitude / Time Rabi**：自动扫描驱动幅度（$\text{rad/s}$），通过正弦拟合标定 $\pi$ 脉冲与 $\pi/2$ 脉冲。
    - **$T_1$ 弛豫测量**：施加 $\pi$ 脉冲后扫描延时，通过指数衰减拟合提取 $T_1$ 寿命。
    - **Ramsey 干涉测量**：$\pi/2 - \tau - \pi/2$ 干涉序列，通过阻尼正弦拟合提取 $T_2^*$ 及微波失谐量 $\Delta$。
+   - **Qubit / Power 频谱测量**：扫描微波驱动频率自动探测单光子与双光子激发谱，精确提取 $f_{01}$、非谐性 $\alpha$ 与两能级粒子数响应。
 
 ---
 
@@ -81,7 +82,7 @@ $$f_q(\Phi) = (f_q + |\alpha|) \left[ \cos^2\left(\pi \frac{\Phi}{\Phi_0}\right)
 
 每个 Transmon 对象提供三条专职物理引线（Channel）：
 * **`q.xy`**：电容耦合线，注入微波正交脉冲 $I(t), Q(t)$，驱动 Bloch 球水平轴旋转。
-* **`q.z`**：互感耦合线，注入纳秒级基带磁通偏置脉冲，动态改变跃迁频率 $f_q(t)$。
+* **`q.z`**：互感耦合线，注入纳秒级基带磁通偏置脉冲，动态改变跃迁频率 $f_q(t)$。支持通过 `v_phi0`（$V_{\Phi_0}$，单位 $\text{V}/\Phi_0$）将 AWG 输出物理电压自动折算为超导环净磁通 $\Phi/\Phi_0 = V / V_{\Phi_0}$。
 * **`q.ro`**：读出微波馈线，连接微波谐振腔（Readout Resonator）。
 
 ### 3. 微波驱动哈密顿量（RWA 下）
@@ -112,10 +113,11 @@ $$f_r^{(0)} = f_r - \chi / (2\pi), \quad f_r^{(1)} = f_r + \chi / (2\pi)$$
    $$S = I + i Q = \frac{1}{T_{\text{meas}}} \int_0^{T_{\text{meas}}} \sqrt{\kappa_{\text{ext}}} \alpha(t) dt + \xi_{\text{noise}}$$
    通过 `IQDiscriminator` 线性阈值判决，输出真实的混淆矩阵与读出保真度 $\mathcal{F}_{\text{ro}} = \frac{P(0|0) + P(1|1)}{2}$。
 
-### 5. 电路物理参数推导驱动强度 (`Transmon.from_circuit`)
+### 5. 电路物理参数推导驱动与磁通耦合强度 (`Transmon.from_circuit`)
 
-在超导量子芯片中，$\Omega_d$ 可由芯片版图电容参数、线路衰减及 AWG 最大输出电压直接解析推导（参考 Krantz et al., 2019）：
+在超导量子芯片中，微波驱动耦合强度 $\Omega_d$ 和 Z 线磁通周期电压 $V_{\Phi_0}$ 均可由芯片版图电容/互感参数、微波线路衰减及 AWG 输出电压直接解析推导（参考 Krantz et al., 2019）：
 
+#### A. XY 微波电容驱动耦合率 ($\Omega_d$)
 1. **总有效电容**：
    $$C_\Sigma = C_g + C_d$$
    （$C_g$ 为对地并联电容，$C_d$ 为微波驱动线对量子比特的耦合电容）
@@ -127,6 +129,18 @@ $$f_r^{(0)} = f_r - \chi / (2\pi), \quad f_r^{(1)} = f_r + \chi / (2\pi)$$
    $$\alpha_{\text{line}} = 10^{\text{attenuation\_dB} / 20}$$
 5. **有效物理驱动耦合强度**：
    $$\Omega_d = \Omega_{\text{chip}} \cdot \alpha_{\text{line}} \cdot V_{\text{max}} \quad (\text{rad/s})$$
+
+#### B. Z 偏置线互感与磁通周期电压 ($V_{\Phi_0}$)
+对于 Z 偏置线与 SQUID 超导环的几何互感耦合：
+1. **Z 偏置线路衰减**：
+   $$\alpha_{\text{line}, z} = 10^{\text{attenuation\_z\_dB} / 20}$$
+2. **芯片短路端动态电流**：
+   $$I_{\text{chip}} = \frac{V_{\text{AWG}} \cdot \alpha_{\text{line}, z}}{Z_0} \quad (Z_0 = 50\,\Omega)$$
+3. **SQUID 环感应磁通**：
+   $$\Phi = M \cdot I_{\text{chip}} = \frac{M \cdot \alpha_{\text{line}, z}}{Z_0} V_{\text{AWG}}$$
+4. **有效磁通周期电压（Flux Period Voltage）**：
+   $$V_{\Phi_0} = \frac{\Phi_0 Z_0}{M \cdot \alpha_{\text{line}, z}} \quad [\mathrm{V}/\Phi_0]$$
+   （其中 $\Phi_0 = h / (2e) \approx 2.0678 \times 10^{-15}\ \mathrm{Wb}$，使穿过 SQUID 环净磁通改变 $1.0\,\Phi_0$ 所需的 AWG 输出峰值电压）
 
 ### 6. 开放系统 Lindblad 耗散主方程
 
@@ -250,6 +264,103 @@ pi2_pulse = GaussianPulse(duration=40e-9, amp=rabi_res.amp_pi_half)
 ramsey_res = RamseyExperiment.run(q, pi_half_pulse=pi2_pulse, detuning=2.0e6)
 print(f"拟合测得 T2*: {ramsey_res.t2_star:.2e} s, 失谐: {ramsey_res.fitted_detuning:.2e} Hz")
 ramsey_res.plot()
+plt.show()
+```
+
+### 4. Z 脉冲改变磁通并扫描 XY 驱动频率测量可调 Transmon 频谱 (Flux-Pulsed Spectroscopy)
+
+在超导量子计算实验中，**磁通可调 Transmon（SQUID Transmon）** 的能级跃迁频率由穿过超导环的磁通量 $\Phi$ 决定。实验中通常将比特停驻在对低频磁通噪声一阶不敏感的对称点（Sweet Spot，$\Phi=0$）。
+
+在执行调频交互或频率多路复用时，通过 **Z 偏置引线 (`q.z`)** 注入纳秒级基带平顶磁通脉冲，可将比特快速移频至目标工作点；在 Z 脉冲平顶稳定期间，于 **XY 控制引线 (`q.xy`)** 注入微弱的长微波探测脉冲并扫描载波驱动频率 $f_d$。当 $f_d$ 命中该偏置磁通下的比特固有频率 $f_q(\Phi)$ 时发生共振吸收跃迁，从而高精度测出移动后的量子比特能谱响应。
+
+<p align="center">
+  <img src="assets/flux_spectroscopy.png" alt="Flux-Pulsed Tunable Transmon Spectroscopy" width="850">
+</p>
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from sqpulse import Transmon, PulseSequence, FlatTopPulse, Simulator, ns, us, MHz, GHz
+
+# 1. 定义可调 SQUID Transmon (结不对称度 d=0.25 < 1.0)
+q = Transmon(
+    name="q0",
+    f_q=5.0 * GHz,        # 对称点 (Sweet Spot, Phi=0) 跃迁频率
+    alpha=-250.0 * MHz,   # 非谐性
+    d=0.25,               # 结不对称度 (d < 1.0 为磁通可调 Transmon)
+    levels=3,             # 截断能级 (|0>, |1>, |2>)
+    t1=30.0 * us,
+    t2=20.0 * us,
+)
+
+print(f"Sweet Spot 静态频率 f_q(0): {q.frequency_at_flux(0.0) / 1e9:.3f} GHz")
+
+# 注：若设置物理电压转换参数 v_phi0=0.8 (或使用 Transmon.from_circuit(m_mutual=2.5e-12, attenuation_z_dB=-20.0))，
+# Z 脉冲 amp 可直接填入仪器真实输出电压 (V)，底层将自动换算：Delta_Phi = amp / v_phi0。
+# 未设置 v_phi0 时，amp 默认直接对应无量纲磁通量 Phi / Phi_0。
+
+# 2. 构造多通道联合脉冲时序：Z 偏置脉冲 + 同步 XY 微波弱探测脉冲
+phi_bias = 0.15                           # 目标 Z 偏置幅度 (单位: Phi_0)
+f_shifted = q.frequency_at_flux(phi_bias) # 理论移动后跃迁频率 ~4.726 GHz
+
+# (1) 在 Z 偏置线施加 120 ns 平顶磁通脉冲 (上升/下降沿各 10 ns)
+z_pulse = FlatTopPulse(duration=120 * ns, amp=phi_bias, ramp_time=10 * ns)
+
+# (2) 在 XY 控制线施加 100 ns 弱微波探测脉冲 (延时 10 ns 对齐至 Z 脉冲平顶稳定阶段)
+xy_probe = FlatTopPulse(duration=100 * ns, amp=0.04, ramp_time=5 * ns)
+
+seq = PulseSequence(name="flux_qubit_spec")
+seq.add(q.z, z_pulse)
+seq.delay(q.xy, 10 * ns)
+seq.add(q.xy, xy_probe)
+
+# 3. 扫描 XY 驱动载波频率 f_d
+freqs = np.linspace(f_shifted - 40 * MHz, f_shifted + 40 * MHz, 61)
+p1_vals = []
+
+for fd in freqs:
+    # 模拟驱动载波频率为 fd 时的含时哈密顿量动力学演化
+    res = Simulator.run(q, seq, dt=1.0 * ns, f_d=float(fd))
+    p1_vals.append(res.final_population(1))
+
+p1_vals = np.array(p1_vals)
+f_peak = freqs[np.argmax(p1_vals)]
+
+print(f"理论目标跃迁频率: {f_shifted / 1e9:.4f} GHz")
+print(f"微波扫描共振峰值: {f_peak / 1e9:.4f} GHz (峰值激发态布居 P1 = {np.max(p1_vals):.3f})")
+
+# 4. 绘制 1D 频谱响应
+plt.figure(figsize=(6.5, 4))
+plt.plot((freqs - f_shifted) / 1e6, p1_vals, "o-", color="#1f77b4", lw=2, ms=4, label="Measured $P_1$")
+plt.axvline(0, color="#d62728", linestyle="--", label=rf"Theoretical $f_q({phi_bias}\Phi_0)$")
+plt.xlabel(r"Drive Detuning $(f_d - f_q)\ [\mathrm{MHz}]$")
+plt.ylabel(r"Excited State Population $P_1$")
+plt.title(rf"Flux-Pulsed Spectroscopy ($\Phi = {phi_bias}\,\Phi_0$)")
+plt.grid(True, linestyle=":", alpha=0.6)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# 5. 进阶：扫描不同 Z 脉冲偏置幅度，标定完整的磁通调频谱 (Flux Arc)
+flux_biases = [0.0, 0.08, 0.15, 0.22]
+f_grid = np.linspace(4.4 * GHz, 5.05 * GHz, 66)
+
+plt.figure(figsize=(7.5, 4))
+for phi in flux_biases:
+    s = PulseSequence()
+    s.add(q.z, FlatTopPulse(duration=120 * ns, amp=phi, ramp_time=10 * ns))
+    s.delay(q.xy, 10 * ns)
+    s.add(q.xy, FlatTopPulse(duration=100 * ns, amp=0.04, ramp_time=5 * ns))
+    p1_trace = [Simulator.run(q, s, dt=1.5 * ns, f_d=float(fd)).final_population(1) for fd in f_grid]
+    f_th = q.frequency_at_flux(phi)
+    plt.plot(f_grid / 1e9, p1_trace, lw=2, label=rf"$\Phi = {phi:.2f}\,\Phi_0\ (f_q={f_th/1e9:.3f}\ \mathrm{{GHz}})$")
+
+plt.xlabel(r"Microwave Drive Frequency $f_d\ [\mathrm{GHz}]$")
+plt.ylabel(r"Excited State Population $P_1$")
+plt.title("Tunable Transmon Spectrum vs. Z Pulse Amplitude")
+plt.grid(True, linestyle=":", alpha=0.6)
+plt.legend()
+plt.tight_layout()
 plt.show()
 ```
 
