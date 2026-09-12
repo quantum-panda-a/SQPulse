@@ -80,3 +80,48 @@ def test_transmon_from_circuit():
     # After -60 dB (1e-3 factor), effective omega_d is around ~1e9 rad/s
     assert 1e8 < q.omega_d < 1e10
 
+
+def test_transmon_control_lines():
+    q = Transmon("q0")
+    assert q.charge_line.name == "q0.charge"
+    assert q.xy == q.charge_line
+    assert q.flux_line.name == "q0.flux"
+    assert q.z == q.flux_line
+    assert q.readout_line.name == "q0.readout"
+    assert q.ro == q.readout_line
+    # Legacy drive compatibility
+    assert q.drive == q.charge_line
+
+
+def test_transmon_single_junction_flux_insensitivity():
+    q = Transmon("q_single", f_q=5.0e9, alpha=-250e6, d=1.0)
+    assert q.d == 1.0
+    for phi in [0.0, 0.1, 0.25, 0.5, 0.75, 1.0]:
+        assert np.isclose(q.frequency_at_flux(phi), 5.0e9)
+        assert np.isclose(q.flux_sensitivity(phi), 0.0)
+
+
+def test_transmon_squid_flux_tuning():
+    f_q_max = 5.0e9
+    alpha = -250e6
+    d = 0.2
+    q = Transmon("q_squid", f_q=f_q_max, alpha=alpha, d=d)
+
+    # 1. Sweet spot (Phi = 0): maximum frequency and zero first-order sensitivity
+    assert np.isclose(q.frequency_at_flux(0.0), f_q_max)
+    assert np.isclose(q.flux_sensitivity(0.0), 0.0, atol=1e-5)
+
+    # 2. Minimum frequency at half-integer flux (Phi = 0.5)
+    ec = abs(alpha)
+    expected_min_fq = (f_q_max + ec) * np.sqrt(d) - ec
+    assert np.isclose(q.frequency_at_flux(0.5), expected_min_fq)
+    assert np.isclose(q.flux_sensitivity(0.5), 0.0, atol=1e-5)
+
+    # 3. Monotonic frequency decrease from 0 to 0.5
+    f_prev = f_q_max
+    for phi in np.linspace(0.05, 0.5, 10):
+        f_curr = q.frequency_at_flux(phi)
+        assert f_curr < f_prev
+        f_prev = f_curr
+
+

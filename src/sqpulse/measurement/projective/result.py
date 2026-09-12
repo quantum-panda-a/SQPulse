@@ -1,21 +1,26 @@
-"""Simulation result container and analysis tools for SQPulse in SI units."""
+"""Projective measurement and state evolution result container for SQPulse in SI units."""
 
 from __future__ import annotations
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 import numpy as np
 import matplotlib.pyplot as plt
 import qutip
 
-from ..models.transmon import Transmon
+from ...models.transmon import Transmon
+from ...sequence.sequence import PulseSequence
+from ..base import BaseMeasurementResult
 
 
-class SimulationResult:
-    """Encapsulates the time evolution data of a simulated quantum system in SI units.
+class ProjectiveResult(BaseMeasurementResult):
+    """Encapsulates the exact state evolution and projective measurement data in SI units.
 
     Args:
         times (np.ndarray): 1D array of evolution timestamps in seconds (s).
         states (List[qutip.Qobj]): State kets or density matrices at each timestamp.
         transmon (Transmon): Physical model simulated.
+        sequence (PulseSequence): The pulse sequence executed.
+        shots (Optional[int]): Number of projective measurement shots sampled, if requested.
+        seed (Optional[int]): Random seed for shot sampling.
     """
 
     def __init__(
@@ -23,10 +28,16 @@ class SimulationResult:
         times: np.ndarray,
         states: List[qutip.Qobj],
         transmon: Transmon,
+        sequence: Optional[PulseSequence] = None,
+        shots: Optional[int] = None,
+        seed: Optional[int] = None,
     ):
+        super().__init__(transmon=transmon, sequence=sequence or PulseSequence())
         self.times = np.asarray(times)
         self.states = states
-        self.transmon = transmon
+        self._shots_data: Optional[np.ndarray] = None
+        if shots is not None and shots > 0:
+            self.sample_shots(shots=shots, seed=seed)
 
     @property
     def final_state(self) -> qutip.Qobj:
@@ -61,6 +72,39 @@ class SimulationResult:
         z = np.array([qutip.expect(sz, s) for s in self.states])
         return x, y, z
 
+    def sample_shots(self, shots: int = 1024, seed: Optional[int] = None) -> np.ndarray:
+        """Sample discrete projective measurement outcomes on the final quantum state.
+
+        Args:
+            shots: Number of independent measurement samples.
+            seed: Optional random seed.
+
+        Returns:
+            1D numpy array of measured integer states (e.g. 0, 1, 2).
+        """
+        probs = np.array([max(0.0, self.final_population(n)) for n in range(self.transmon.levels)])
+        total_p = probs.sum()
+        if total_p <= 0:
+            probs = np.ones(self.transmon.levels) / self.transmon.levels
+        else:
+            probs = probs / total_p
+
+        rng = np.random.default_rng(seed)
+        self._shots_data = rng.choice(np.arange(self.transmon.levels), size=shots, p=probs)
+        return self._shots_data
+
+    @property
+    def shots(self) -> Optional[np.ndarray]:
+        """Array of sampled single-shot outcomes, or None if sample_shots has not been called."""
+        return self._shots_data
+
+    def counts(self) -> Dict[int, int]:
+        """Return histogram count dictionary of sampled measurement outcomes."""
+        if self._shots_data is None:
+            self.sample_shots(shots=1024)
+        unique, counts = np.unique(self._shots_data, return_counts=True)
+        return {int(u): int(c) for u, c in zip(unique, counts)}
+
     def plot_populations(
         self,
         levels: Optional[List[int]] = None,
@@ -68,14 +112,7 @@ class SimulationResult:
         figsize: Optional[Tuple[int, int]] = None,
         title: Optional[str] = None,
     ) -> plt.Axes:
-        """Plot the level populations P_n(t) as a function of time.
-
-        Args:
-            levels: Optional list of levels to plot (defaults to all).
-            ax: Optional matplotlib axes.
-            figsize: Figure size tuple.
-            title: Title string.
-        """
+        """Plot the level populations P_n(t) as a function of time."""
         if ax is None:
             _, ax = plt.subplots(figsize=figsize or (8, 4.5))
 
@@ -126,10 +163,14 @@ class SimulationResult:
         b = qutip.Bloch()
         x, y, z = self.bloch_vector()
 
-        # Downsample trajectory points to keep plot clean
         indices = np.arange(0, len(x), point_interval)
         b.add_points([x[indices], y[indices], z[indices]], meth="l")
-        # Add final point as a vector
         b.add_vectors([x[-1], y[-1], z[-1]])
         b.show()
         return b
+
+
+# Alias SimulationResult to ProjectiveResult for full backward compatibility
+SimulationResult = ProjectiveResult
+
+__all__ = ["ProjectiveResult", "SimulationResult"]

@@ -9,7 +9,7 @@ from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..pulses.shapes import GaussianPulse, SquarePulse
 from ..sequence.sequence import PulseSequence
-from ..simulation.solver import Simulator
+from ..measurement.projective import Simulator
 from .fitting import fit_sine
 
 
@@ -94,6 +94,8 @@ class RabiExperiment:
         duration: float = 40e-9,
         amps: Optional[np.ndarray] = None,
         dt: float = 5e-10,
+        backend: Union[str, Any] = "projective",
+        backend_kwargs: Optional[Dict[str, Any]] = None,
         **pulse_kwargs,
     ) -> RabiResult:
         """Perform an Amplitude Rabi sweep to calibrate pi and pi/2 pulse amplitudes.
@@ -104,17 +106,30 @@ class RabiExperiment:
             duration: Pulse length in seconds (default 40e-9 s = 40 ns).
             amps: 1D array of AWG pulse amplitudes V_0 in [-1.0, 1.0] (defaults to [0.0, 1.0]).
             dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
+            backend: Measurement backend ('projective' or 'dispersive', default 'projective').
+            backend_kwargs: Additional kwargs passed to the measurement backend.
             pulse_kwargs: Additional kwargs passed to pulse_type.
         """
+        from ..measurement import Measurement
+
         if amps is None:
             amps = np.linspace(0.0, 1.0, 41)
+
+        b_opts = dict(dt=dt)
+        if backend_kwargs:
+            b_opts.update(backend_kwargs)
 
         p1_list = []
         for a in amps:
             p = pulse_type(duration=duration, amp=a, **pulse_kwargs)
             seq = PulseSequence(name=f"rabi_a_{a:.2e}").add(transmon.drive, p)
-            res = Simulator.run(transmon, seq, dt=dt)
-            p1_list.append(res.final_population(1))
+            res = Measurement.run(transmon, seq, backend=backend, **b_opts)
+            if hasattr(res, "final_population"):
+                p1_list.append(res.final_population(1))
+            elif hasattr(res, "counts"):
+                cts = res.counts()
+                total = sum(cts.values())
+                p1_list.append(cts.get(1, 0) / max(1, total))
 
         p1_arr = np.array(p1_list)
         fit = fit_sine(amps, p1_arr)
@@ -134,6 +149,8 @@ class RabiExperiment:
         amp: float = 0.5,
         durations: Optional[np.ndarray] = None,
         dt: float = 5e-10,
+        backend: Union[str, Any] = "projective",
+        backend_kwargs: Optional[Dict[str, Any]] = None,
         **pulse_kwargs,
     ) -> RabiResult:
         """Perform a Time Rabi sweep (duration sweep with fixed AWG amplitude).
@@ -141,20 +158,33 @@ class RabiExperiment:
         Args:
             transmon: Physical Transmon model.
             pulse_type: Pulse class to instantiate (default SquarePulse).
-            amp: AWG drive amplitude V_0 (default 0.5).
-            durations: 1D array of durations in seconds to sweep.
-            dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
+            amp: Normalized AWG amplitude V_0 in [-1.0, 1.0] (default 0.5).
+            durations: 1D array of pulse lengths in seconds (s).
+            dt: Simulation sampling step in seconds (default 5e-10 s = 0.5 ns).
+            backend: Measurement backend ('projective' or 'dispersive', default 'projective').
+            backend_kwargs: Additional kwargs passed to the measurement backend.
             pulse_kwargs: Additional kwargs passed to pulse_type.
         """
+        from ..measurement import Measurement
+
         if durations is None:
-            durations = np.linspace(2e-9, 60e-9, 40)
+            durations = np.linspace(2e-9, 100e-9, 41)
+
+        b_opts = dict(dt=dt)
+        if backend_kwargs:
+            b_opts.update(backend_kwargs)
 
         p1_list = []
         for d in durations:
             p = pulse_type(duration=d, amp=amp, **pulse_kwargs)
             seq = PulseSequence(name=f"rabi_t_{d:.2e}").add(transmon.drive, p)
-            res = Simulator.run(transmon, seq, dt=dt)
-            p1_list.append(res.final_population(1))
+            res = Measurement.run(transmon, seq, backend=backend, **b_opts)
+            if hasattr(res, "final_population"):
+                p1_list.append(res.final_population(1))
+            elif hasattr(res, "counts"):
+                cts = res.counts()
+                total = sum(cts.values())
+                p1_list.append(cts.get(1, 0) / max(1, total))
 
         p1_arr = np.array(p1_list)
         fit = fit_sine(durations, p1_arr)

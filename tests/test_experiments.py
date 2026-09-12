@@ -2,10 +2,7 @@
 
 import numpy as np
 import pytest
-from sqpulse.models import Transmon
-from sqpulse.pulses import GaussianPulse, SquarePulse
-from sqpulse.sequence import PulseSequence
-from sqpulse.simulation import Simulator
+from sqpulse import Transmon, PulseSequence, SquarePulse, GaussianPulse, Simulator
 from sqpulse.experiments import (
     RabiExperiment,
     T1Experiment,
@@ -185,4 +182,23 @@ def test_spectroscopy_levels_warning():
             num_points=7,
             dt=1e-9,
         )
+
+
+def test_rabi_with_dispersive_backend():
+    # Test that RabiExperiment can execute with backend='dispersive'
+    q = Transmon("q_exp_disp", f_q=5.0e9, levels=2, omega_d=2.0 * np.pi * 50e6)
+    rabi_res = RabiExperiment.amplitude_rabi(
+        q,
+        pulse_type=SquarePulse,
+        duration=20e-9,
+        amps=np.linspace(0.0, 1.0, 11),
+        backend="dispersive",
+        backend_kwargs=dict(shots=500, snr_db=15.0, seed=42),
+    )
+    assert len(rabi_res.p1_vals) == 11
+    assert rabi_res.amp_pi > 0.0
+    # Values should fluctuate between 0 and 1
+    assert np.min(rabi_res.p1_vals) < 0.2
+    assert np.max(rabi_res.p1_vals) > 0.8
+
 

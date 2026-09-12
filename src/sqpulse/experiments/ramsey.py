@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..sequence.sequence import PulseSequence
-from ..simulation.solver import Simulator
+from ..measurement.projective import Simulator
 from .fitting import fit_decaying_sine
 
 
@@ -79,6 +79,8 @@ class RamseyExperiment:
         detuning: float = 2.0e6,  # 2 MHz in Hz
         delays: Optional[np.ndarray] = None,
         dt: float = 5e-10,
+        backend: Union[str, Any] = "projective",
+        backend_kwargs: Optional[Dict[str, Any]] = None,
     ) -> RamseyResult:
         """Run Ramsey sequence: π/2 - delay(τ) - π/2 under reference detuning Δ (in Hz).
 
@@ -88,13 +90,21 @@ class RamseyExperiment:
             detuning: Artificial reference detuning in Hz (default 2.0e6 Hz = 2 MHz).
             delays: Array of delay durations in seconds (s).
             dt: Simulation sampling step in seconds (default 5e-10 s = 0.5 ns).
+            backend: Measurement backend ('projective' or 'dispersive', default 'projective').
+            backend_kwargs: Additional kwargs passed to the measurement backend.
         """
+        from ..measurement import Measurement
+
         if delays is None:
             max_delay = min(3.0 * transmon.t2 if not np.isinf(transmon.t2) else 3.0e-6, 5.0e-6)
             delays = np.linspace(0, max_delay, 80)
 
         # Drive frequency offset: f_d = f_q - detuning (all in Hz)
         f_d = transmon.f_q - detuning
+
+        b_opts = dict(dt=dt, f_d=f_d)
+        if backend_kwargs:
+            b_opts.update(backend_kwargs)
 
         p1_list = []
         for d in delays:
@@ -104,8 +114,13 @@ class RamseyExperiment:
                 seq.delay(transmon.drive, d)
             seq.add(transmon.drive, pi_half_pulse)
 
-            res = Simulator.run(transmon, seq, dt=dt, f_d=f_d)
-            p1_list.append(res.final_population(1))
+            res = Measurement.run(transmon, seq, backend=backend, **b_opts)
+            if hasattr(res, "final_population"):
+                p1_list.append(res.final_population(1))
+            elif hasattr(res, "counts"):
+                cts = res.counts()
+                total = sum(cts.values())
+                p1_list.append(cts.get(1, 0) / max(1, total))
 
         p1_arr = np.array(p1_list)
         fit = fit_decaying_sine(delays, p1_arr)

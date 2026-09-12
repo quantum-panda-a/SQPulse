@@ -6,8 +6,14 @@ import numpy as np
 import qutip
 
 
+from ..sequence.channel import Channel, normalize_channel
+
+
 class Transmon:
     r"""Physical model of a multi-level Transmon qubit in SI units.
+
+    Supports both fixed-frequency single-junction transmons and flux-tunable SQUID transmons.
+    Single-junction transmons are a special case with junction asymmetry d = 1.0.
 
     The Hamiltonian in the rotating frame of reference (carrier frequency f_d in Hz) is:
     .. math::
@@ -19,8 +25,12 @@ class Transmon:
 
     Args:
         name (str): Unique name of this transmon (e.g. 'q0').
-        f_q (float): Qubit 0-1 transition frequency in Hz (e.g. 5.0e9 for 5 GHz).
+        f_q (float): Maximum qubit 0-1 transition frequency at sweet spot in Hz (e.g. 5.0e9 for 5 GHz).
         alpha (float): Anharmonicity in Hz (typically negative, e.g. -250e6 for -250 MHz).
+        d (float): SQUID junction asymmetry parameter d = |Ej1 - Ej2| / (Ej1 + Ej2) in [0.0, 1.0].
+            d = 1.0 represents a single-junction transmon (frequency is fixed, flux-insensitive).
+            d = 0.0 represents a fully symmetric SQUID. Default is 1.0.
+        flux_offset (float): Static external magnetic flux bias in units of Phi_0 (default 0.0).
         levels (int): Number of Hilbert space levels to model (default 4: |0>, |1>, |2>, |3>).
         t1 (float): Energy relaxation time T1 in seconds (default inf).
         t2 (float): Dephasing time T2 in seconds (default inf).
@@ -33,6 +43,8 @@ class Transmon:
         name: str = "q0",
         f_q: float = 5.0e9,
         alpha: float = -250.0e6,
+        d: float = 1.0,
+        flux_offset: float = 0.0,
         levels: int = 4,
         t1: float = np.inf,
         t2: float = np.inf,
@@ -41,9 +53,14 @@ class Transmon:
     ):
         if levels < 2:
             raise ValueError(f"Transmon levels must be >= 2, got {levels}")
+        if not (0.0 <= d <= 1.0):
+            raise ValueError(f"Junction asymmetry d must be within [0.0, 1.0], got {d}")
+
         self.name = name
         self.f_q = float(f_q)
         self.alpha = float(alpha)
+        self.d = float(d)
+        self.flux_offset = float(flux_offset)
         self.levels = int(levels)
         self.t1 = float(t1)
         self.t2 = float(t2)
@@ -55,8 +72,16 @@ class Transmon:
             # Default physical drive coupling: 2*pi * 50 MHz (rad/s)
             self.omega_d = 2.0 * np.pi * 50.0e6
 
-        # Drive channel name
-        self.drive = f"{self.name}.drive"
+        # Physical control lines
+        self.charge_line = Channel(f"{self.name}.charge", description=f"Charge/XY line for {self.name}")
+        self.xy = self.charge_line
+        self.flux_line = Channel(f"{self.name}.flux", description=f"Flux/Z line for {self.name}")
+        self.z = self.flux_line
+        self.readout_line = Channel(f"{self.name}.readout", description=f"Readout resonator line for {self.name}")
+        self.ro = self.readout_line
+
+        # Legacy backward-compatible drive channel
+        self.drive = self.charge_line
 
         # Precompute standard operators in this mode's Hilbert space
         self._a = qutip.destroy(self.levels)
@@ -135,18 +160,56 @@ class Transmon:
         ket = self.fock(n)
         return ket * ket.dag()
 
-    def H0(self, f_d: Optional[float] = None) -> qutip.Qobj:
+    def frequency_at_flux(self, flux: Optional[float] = None) -> float:
+        """Calculate qubit 0-1 transition frequency at an external flux (in units of Phi_0).
+
+        If flux is None, uses self.flux_offset.
+        For single-junction transmon (d = 1.0), returns self.f_q identically.
+        """
+        phi = self.flux_offset if flux is None else float(flux)
+        if self.d >= 1.0:
+            return self.f_q
+
+        cos_term = np.cos(np.pi * phi)
+        sin_term = np.sin(np.pi * phi)
+        g = cos_term**2 + (self.d**2) * (sin_term**2)
+        ej_ratio = np.sqrt(max(0.0, g))
+
+        ec = abs(self.alpha)
+        f_at_phi = (self.f_q + ec) * (ej_ratio**0.5) - ec
+        return float(max(0.0, f_at_phi))
+
+    def flux_sensitivity(self, flux: Optional[float] = None) -> float:
+        """Calculate first-order flux sensitivity df_q / dPhi (in Hz / Phi_0).
+
+        Returns 0.0 for single-junction transmons (d = 1.0) and at sweet spots (Phi = 0 mod 1).
+        """
+        if self.d >= 1.0:
+            return 0.0
+        phi = self.flux_offset if flux is None else float(flux)
+        cos_term = np.cos(np.pi * phi)
+        sin_term = np.sin(np.pi * phi)
+        g = cos_term**2 + (self.d**2) * (sin_term**2)
+        if g <= 1e-14:
+            return 0.0
+        dg_dphi = np.pi * (self.d**2 - 1.0) * np.sin(2.0 * np.pi * phi)
+        ec = abs(self.alpha)
+        return float((self.f_q + ec) * 0.25 * (g**(-0.75)) * dg_dphi)
+
+    def H0(self, f_d: Optional[float] = None, flux: Optional[float] = None) -> qutip.Qobj:
         r"""Compute static Hamiltonian in the frame rotating at frequency f_d (Hz).
 
-        If f_d is None, defaults to resonant frame (f_d = f_q), so detuning is 0.
+        If f_d is None, defaults to resonant frame (f_d = self.frequency_at_flux(flux)).
+        If flux is provided, the detuning is calculated relative to the flux-shifted qubit frequency.
 
         .. math::
-            H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2 \quad (\text{rad/s})
+            H_0 = 2\pi (f_q(\Phi) - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2 \quad (\text{rad/s})
         """
+        eff_fq = self.frequency_at_flux(flux)
         if f_d is None:
-            f_d = self.f_q
+            f_d = eff_fq
 
-        detune = self.f_q - f_d
+        detune = eff_fq - f_d
         H_detune = 2.0 * np.pi * detune * self.n
 
         # Non-linear Kerr term: pi * alpha * a^dag * a^dag * a * a
@@ -262,7 +325,8 @@ class Transmon:
         return instance
 
     def __repr__(self) -> str:
+        d_str = f", d={self.d:.2f}" if self.d < 1.0 else ""
         return (
-            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz, "
+            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz{d_str}, "
             f"levels={self.levels}, omega_d={self.omega_d:.3e}rad/s, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
         )

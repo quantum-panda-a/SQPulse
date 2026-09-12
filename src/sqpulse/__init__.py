@@ -36,9 +36,20 @@ from .pulses import (
     spectral_leakage,
     compare_pulses,
 )
-from .models import Transmon
+from .models import Transmon, ReadoutResonator
 from .sequence import PulseSequence, Channel
-from .simulation import Simulator, SimulationResult
+from .measurement import (
+    Measurement,
+    MeasurementBackend,
+    BaseMeasurementResult,
+    ProjectiveBackend,
+    ProjectiveResult,
+    DispersiveReadoutBackend,
+    DispersiveResult,
+    IQDiscriminator,
+    Simulator,
+    SimulationResult,
+)
 from .experiments import (
     RabiExperiment,
     RabiResult,
@@ -110,10 +121,19 @@ __all__ = [
     "spectral_leakage",
     "compare_pulses",
     "Transmon",
+    "ReadoutResonator",
     "PulseSequence",
     "Channel",
     "Simulator",
     "SimulationResult",
+    "Measurement",
+    "MeasurementBackend",
+    "BaseMeasurementResult",
+    "ProjectiveBackend",
+    "ProjectiveResult",
+    "DispersiveReadoutBackend",
+    "DispersiveResult",
+    "IQDiscriminator",
     "RabiExperiment",
     "RabiResult",
     "T1Experiment",

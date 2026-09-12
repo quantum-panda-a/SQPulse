@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..sequence.sequence import PulseSequence
-from ..simulation.solver import Simulator
+from ..measurement.projective import Simulator
 from .fitting import fit_decay
 
 
@@ -69,6 +69,8 @@ class T1Experiment:
         pi_pulse: Pulse,
         delays: Optional[np.ndarray] = None,
         dt: float = 1e-9,
+        backend: Union[str, Any] = "projective",
+        backend_kwargs: Optional[Dict[str, Any]] = None,
     ) -> T1Result:
         """Run T1 experiment by applying a pi-pulse and varying the wait time before measurement.
 
@@ -77,12 +79,20 @@ class T1Experiment:
             pi_pulse: Pre-calibrated pi pulse.
             delays: Array of delay durations in seconds.
             dt: Simulation sampling step in seconds (default 1e-9 s = 1 ns).
+            backend: Measurement backend ('projective' or 'dispersive', default 'projective').
+            backend_kwargs: Additional kwargs passed to the measurement backend.
         """
+        from ..measurement import Measurement
+
         if np.isinf(transmon.t1) or transmon.t1 <= 0:
             raise ValueError(f"Transmon T1 must be finite positive, got {transmon.t1} s")
 
         if delays is None:
             delays = np.linspace(0, 3.5 * transmon.t1, 40)
+
+        b_opts = dict(dt=dt)
+        if backend_kwargs:
+            b_opts.update(backend_kwargs)
 
         p1_list = []
         for d in delays:
@@ -90,8 +100,13 @@ class T1Experiment:
             seq.add(transmon.drive, pi_pulse)
             if d > 0:
                 seq.delay(transmon.drive, d)
-            res = Simulator.run(transmon, seq, dt=dt)
-            p1_list.append(res.final_population(1))
+            res = Measurement.run(transmon, seq, backend=backend, **b_opts)
+            if hasattr(res, "final_population"):
+                p1_list.append(res.final_population(1))
+            elif hasattr(res, "counts"):
+                cts = res.counts()
+                total = sum(cts.values())
+                p1_list.append(cts.get(1, 0) / max(1, total))
 
         p1_arr = np.array(p1_list)
         fit = fit_decay(delays, p1_arr)

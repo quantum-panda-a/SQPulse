@@ -70,7 +70,21 @@ $$H_0 = 2\pi (f_q - f_d) a^\dagger a + \pi \alpha a^{\dagger 2} a^2 \quad (\text
   * $\omega_{01} = 2\pi (f_q - f_d)$
   * $\omega_{12} = \omega_{01} + 2\pi \alpha$（两能级差相差 $2\pi \alpha$）。
 
-### 2. 微波驱动哈密顿量（RWA 下）
+### 2. SQUID 磁通调频与引线体系（Flux Tuning & Control Lines）
+
+SQPulse 的 `Transmon` 统一兼容单结与对称/非对称 SQUID 模型。通过结不对称度参数 $d \in [0.0, 1.0]$（默认 $d=1.0$ 为单结）：
+$$E_J(\Phi) = E_{J,\Sigma} \sqrt{\cos^2\left(\pi \frac{\Phi}{\Phi_0}\right) + d^2 \sin^2\left(\pi \frac{\Phi}{\Phi_0}\right)}$$
+$$f_q(\Phi) = (f_q + |\alpha|) \left[ \cos^2\left(\pi \frac{\Phi}{\Phi_0}\right) + d^2 \sin^2\left(\pi \frac{\Phi}{\Phi_0}\right) \right]^{1/4} - |\alpha|$$
+
+* $d = 1.0$ 时，$\cos^2 + \sin^2 = 1$，$f_q(\Phi) \equiv f_q$ 恒定不变，退化为单结 Transmon；
+* $d < 1.0$ 时，可通过外加磁通 $\Phi/\Phi_0$ 动态调谐比特频率。
+
+每个 Transmon 对象提供三条专职物理引线（Channel）：
+* **`q.charge_line`**（别名 `q.xy`, `q.drive`）：电容耦合线，注入微波正交脉冲 $I(t), Q(t)$，驱动 Bloch 球水平轴旋转。
+* **`q.flux_line`**（别名 `q.z`）：互感耦合线，注入纳秒级基带磁通偏置脉冲，动态改变跃迁频率 $f_q(t)$。
+* **`q.readout_line`**（别名 `q.ro`）：读出微波馈线，连接微波谐振腔（Readout Resonator）。
+
+### 3. 微波驱动哈密顿量（RWA 下）
 
 微波驱动信号由 AWG 产生的同相基带包络 $I(t)$ 和正交基带包络 $Q(t)$ 调制，在旋转坐标系下的含时驱动哈密顿量为：
 
@@ -83,9 +97,22 @@ $$H_d(t) = \frac{1}{2} \Omega_d \Big[ I(t) (a + a^\dagger) + Q(t) i(a^\dagger - 
 * $I(t), Q(t)$：脉冲序列输出的归一化 AWG 电压信号（无量纲，标称范围 $[-1, 1]$）。
 
 系统总哈密顿量即为：
-$$H(t) = H_0 + I(t) H_{\text{drive},x} + Q(t) H_{\text{drive},y}$$
+$$H(t) = H_0(t) + I(t) H_{\text{drive},x} + Q(t) H_{\text{drive},y}$$
 
-### 3. 电路物理参数推导驱动强度 (`Transmon.from_circuit`)
+### 4. 谐振腔色散读出物理原理 (`ReadoutResonator` & `DispersiveReadoutBackend`)
+
+在电路 QED 色散区（$|\Delta_{qr}| \gg g$），微波谐振腔频率随 Transmon 状态产生色散频移 $\chi$：
+$$f_r^{(0)} = f_r - \chi / (2\pi), \quad f_r^{(1)} = f_r + \chi / (2\pi)$$
+
+1. **稳态透射谱 ($S_{21}$)**：
+   $$S_{21}(f; |n\rangle) = \frac{\kappa_{\text{ext}}}{i 2\pi (f - f_r^{(n)}) + \kappa / 2}$$
+2. **含时光子建立与衰减（Langevin 方程）**：
+   $$\frac{d\alpha_n(t)}{dt} = - \left[ i 2\pi (f_{\text{ro}} - f_r^{(n)}) + \frac{\kappa}{2} \right] \alpha_n(t) - i \epsilon_{\text{scale}} \epsilon(t)$$
+3. **数字解调与单次判决（IQ 复平面）**：
+   $$S = I + i Q = \frac{1}{T_{\text{meas}}} \int_0^{T_{\text{meas}}} \sqrt{\kappa_{\text{ext}}} \alpha(t) dt + \xi_{\text{noise}}$$
+   通过 `IQDiscriminator` 线性阈值判决，输出真实的混淆矩阵与读出保真度 $\mathcal{F}_{\text{ro}} = \frac{P(0|0) + P(1|1)}{2}$。
+
+### 5. 电路物理参数推导驱动强度 (`Transmon.from_circuit`)
 
 在超导量子芯片中，$\Omega_d$ 可由芯片版图电容参数、线路衰减及 AWG 最大输出电压直接解析推导（参考 Krantz et al., 2019）：
 
@@ -101,7 +128,7 @@ $$H(t) = H_0 + I(t) H_{\text{drive},x} + Q(t) H_{\text{drive},y}$$
 5. **有效物理驱动耦合强度**：
    $$\Omega_d = \Omega_{\text{chip}} \cdot \alpha_{\text{line}} \cdot V_{\text{max}} \quad (\text{rad/s})$$
 
-### 4. 开放系统 Lindblad 耗散主方程
+### 6. 开放系统 Lindblad 耗散主方程
 
 考虑退相干效应时，系统密度矩阵 $\rho(t)$ 的动力学演化满足 Lindblad 主方程：
 
@@ -151,32 +178,50 @@ compare_pulses([p_gauss, p_cos, p_sq], domain="both")
 plt.show()
 ```
 
-### 2. 定义受驱动 Transmon 并编排脉冲序列
+### 2. 定义受驱动 Transmon 并编排多通道脉冲序列
 
 ```python
 import matplotlib.pyplot as plt
-from sqpulse import Transmon, PulseSequence, GaussianPulse, Simulator
+from sqpulse import Transmon, ReadoutResonator, PulseSequence, GaussianPulse, FlatTopPulse, Measurement, ns, us, MHz, GHz
 
-# 1. 定义 Transmon (5.0 GHz = 5e9 Hz, 非谐性 -250 MHz = -250e6 Hz, T1 = 25 us = 25e-6 s)
-# 物理驱动耦合 omega_d 默认 2*pi*50 MHz (rad/s)，也可由芯片电路参数自动推导：
-# q = Transmon.from_circuit(name="q0", c_d=5e-17, c_g=70e-15, f_q=5e9, attenuation_dB=-60.0)
-q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, levels=3, t1=25.0e-6, t2=18.0e-6)
+# 1. 定义通用 Transmon (支持结不对称度 d; d=1.0 为单结, d=0.2 为可调 SQUID)
+q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.2, levels=3, t1=25.0 * us, t2=18.0 * us)
 
-# 2. 编排脉冲序列 (amp 为 AWG 归一化幅度 V_0 in [-1, 1]，时间单位均为秒 s)
-seq = PulseSequence(name="xy_drive")
-seq.add(q.drive, GaussianPulse(duration=30e-9, amp=0.5))
-seq.delay(q.drive, 20e-9)
-seq.add(q.drive, GaussianPulse(duration=30e-9, amp=0.5, phase=1.5708)) # 绕 Y 轴驱动
+# 2. 编排多通道脉冲序列 (包含 XY 驱动、Z 磁通调频与腔读出)
+seq = PulseSequence(name="control_and_readout")
+# (1) 在 charge_line (XY) 施加 pi/2 脉冲
+seq.add(q.charge_line, GaussianPulse(duration=30 * ns, amp=0.5))
+seq.sync()
 
-# 3. 绘制时序图
+# (2) 在 flux_line (Z) 施加快速磁通脉冲调制频率
+seq.add(q.flux_line, FlatTopPulse(duration=40 * ns, amp=0.1, ramp_time=4 * ns))
+seq.sync()
+
+# (3) 施加第二个 pi/2 脉冲
+seq.add(q.charge_line, GaussianPulse(duration=30 * ns, amp=0.5))
+seq.sync()
+
+# (4) 在 readout_line (RO) 施加 1 us 微波读出脉冲
+seq.add(q.readout_line, FlatTopPulse(duration=1000 * ns, amp=1.0, ramp_time=20 * ns))
+
+# 绘制多通道时间轴对齐图
 seq.plot()
 plt.show()
 
-# 4. 动力学演化
-result = Simulator.run(q, seq)
-result.plot_populations()
-result.plot_bloch_vector()
+# 3. 双后端测量选择
+# 方式 A：选择理想投影与态演化后端 (精确主方程求解)
+res_proj = Measurement.run(q, seq, backend="projective")
+res_proj.plot_populations()
 plt.show()
+
+# 方式 B：选择真实色散谐振腔读出后端 (微波传输谱、IQ 解调与单次判决)
+cavity = ReadoutResonator(name="r0", f_r=7.0 * GHz, kappa=2.0 * np.pi * 3.0 * MHz, chi=2.0 * np.pi * 1.5 * MHz)
+res_disp = Measurement.run(q, seq, backend="dispersive", resonator=cavity, shots=1000, snr_db=15.0)
+res_disp.plot_iq_plane()     # 查看 IQ 平面聚类散点图与判决面
+res_disp.plot_trajectories() # 查看腔内光子动力学建立与衰减
+plt.show()
+print(f"读出保真度: {res_disp.fidelity:.2%}")
+print("混淆矩阵:\n", res_disp.confusion_matrix)
 ```
 
 ### 3. 运行量子实验测量

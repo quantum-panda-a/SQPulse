@@ -10,7 +10,7 @@ from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..pulses.shapes import SquarePulse, GaussianPulse, FlatTopPulse
 from ..sequence.sequence import PulseSequence
-from ..simulation.solver import Simulator
+from ..measurement.projective import Simulator
 from .fitting import fit_spectroscopy_peaks, fit_lorentzian
 
 

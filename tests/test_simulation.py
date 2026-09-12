@@ -1,11 +1,11 @@
-"""Tests for sqpulse.simulation in SI units."""
+"""Tests for projective measurement simulation in SI units."""
 
 import numpy as np
 import pytest
 from sqpulse.models import Transmon
 from sqpulse.pulses import SquarePulse
 from sqpulse.sequence import PulseSequence
-from sqpulse.simulation import Simulator
+from sqpulse import Simulator
 
 
 def test_resonant_rabi_flip():
@@ -69,3 +69,42 @@ def test_drag_leakage_suppression():
     assert leakage_nodrag > 1e-4
     assert leakage_drag < 1e-5
     assert (leakage_nodrag / leakage_drag) > 50.0
+
+
+def test_dynamic_flux_pulse_phase_accumulation():
+    """A flux pulse on q.flux_line dynamically shifts the qubit frequency and accumulates a Z phase."""
+    from sqpulse.pulses import SquarePulse
+    from sqpulse import Simulator
+
+    # Tunable qubit with asymmetry d=0.2, sweet spot at 5 GHz
+    q = Transmon("q_flux", f_q=5.0e9, alpha=-250e6, d=0.2, levels=2, omega_d=2.0 * np.pi * 50e6)
+    v0_pi = np.pi / (q.omega_d * 20e-9)
+    p_pi2 = SquarePulse(duration=20e-9, amp=0.5 * v0_pi)
+
+    # Flux pulse shifting flux to Phi = 0.1
+    f_shift = q.frequency_at_flux(0.1)
+    detuning = f_shift - 5.0e9  # Negative shift
+    # Choose duration so that accumulated phase is pi: 2*pi * |detuning| * tau = pi -> tau = 1 / (2 * |detuning|)
+    tau = 1.0 / (2.0 * abs(detuning))
+
+    p_flux = SquarePulse(duration=tau, amp=0.1)
+
+    # Sequence 1: pi/2 - delay(tau) without flux pulse - pi/2 (resonant, so accumulates 0 phase -> state flips to |1>)
+    seq_resonant = PulseSequence()
+    seq_resonant.add(q.charge_line, p_pi2)
+    seq_resonant.delay(q.charge_line, tau)
+    seq_resonant.add(q.charge_line, p_pi2)
+    res_res = Simulator.run(q, seq_resonant, dt=5e-11)
+    assert np.isclose(res_res.final_population(1), 1.0, atol=1e-2)
+
+    # Sequence 2: pi/2 - flux pulse(tau, amp=0.1) - pi/2 (accumulates pi phase -> rotates back to |0>)
+    seq_flux = PulseSequence()
+    seq_flux.add(q.charge_line, p_pi2)
+    seq_flux.sync()  # Advance flux_line clock to end of first pulse
+    seq_flux.add(q.flux_line, p_flux)
+    seq_flux.sync()  # Advance charge_line clock to end of flux pulse
+    seq_flux.add(q.charge_line, p_pi2)
+    res_flux = Simulator.run(q, seq_flux, dt=5e-11)
+    # Because of the pi phase shift, the second pi/2 rotation returns state to |0>
+    assert np.isclose(res_flux.final_population(0), 1.0, atol=1e-2)
+

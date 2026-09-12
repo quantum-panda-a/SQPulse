@@ -274,6 +274,33 @@ class Pulse(ABC):
 
         return t, c_wave
 
+    def __call__(self, t: Union[float, np.ndarray]) -> Union[complex, np.ndarray]:
+        """Evaluate the complex pulse envelope Omega(t) at time(s) t in seconds."""
+        t_arr = np.asarray(t)
+        scalar = t_arr.ndim == 0
+        t_1d = np.atleast_1d(t_arr)
+
+        res = np.zeros(len(t_1d), dtype=complex)
+        mask = (t_1d >= 0.0) & (t_1d <= self.duration)
+        if np.any(mask):
+            valid_t = t_1d[mask]
+            env = self.envelope(valid_t)
+            i_val = self.amp * env
+            if self.drag != 0.0:
+                eff_alpha = self.alpha if self.alpha is not None else -250.0e6
+                drag_scale = -self.drag / (2.0 * np.pi * eff_alpha) if eff_alpha != 0.0 else 0.0
+                d_env = self.envelope_derivative(valid_t)
+                q_val = self.amp * drag_scale * d_env
+            else:
+                q_val = np.zeros_like(i_val)
+
+            c_val = (i_val + 1j * q_val) * np.exp(1j * self.phase)
+            if self.detune != 0.0:
+                c_val = c_val * np.exp(1j * 2.0 * np.pi * self.detune * valid_t)
+            res[mask] = c_val
+
+        return res[0] if scalar else res
+
     def fft(
         self,
         dt: Optional[float] = None,

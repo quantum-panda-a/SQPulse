@@ -36,6 +36,7 @@ class PulseSequence:
         self.name = name
         self._channels: Dict[str, List[ScheduledPulse]] = {}
         self._channel_clocks: Dict[str, float] = {}
+        self._sync_time: float = 0.0
 
     @property
     def channels(self) -> List[str]:
@@ -68,7 +69,8 @@ class PulseSequence:
         ch = normalize_channel(channel)
         if ch not in self._channels:
             self._channels[ch] = []
-            self._channel_clocks[ch] = 0.0
+            if ch not in self._channel_clocks:
+                self._channel_clocks[ch] = self._sync_time
 
         if t_start is None:
             t_start = self._channel_clocks[ch]
@@ -90,7 +92,8 @@ class PulseSequence:
         ch = normalize_channel(channel)
         if ch not in self._channels:
             self._channels[ch] = []
-            self._channel_clocks[ch] = 0.0
+            if ch not in self._channel_clocks:
+                self._channel_clocks[ch] = self._sync_time
         self._channel_clocks[ch] += float(duration)
         return self
 
@@ -99,6 +102,7 @@ class PulseSequence:
         self.sync()
         for ch in self._channel_clocks:
             self._channel_clocks[ch] += float(duration)
+        self._sync_time += float(duration)
         return self
 
     def sync(self, *channels: ChannelLike) -> PulseSequence:
@@ -107,13 +111,15 @@ class PulseSequence:
             return self
 
         if not channels:
-            target_channels = list(self._channel_clocks.keys())
+            t_max = max(self._channel_clocks.values())
+            self._sync_time = max(self._sync_time, t_max)
+            for c in self._channel_clocks:
+                self._channel_clocks[c] = self._sync_time
         else:
             target_channels = [normalize_channel(c) for c in channels]
-
-        t_max = max(self._channel_clocks.get(c, 0.0) for c in target_channels)
-        for c in target_channels:
-            self._channel_clocks[c] = t_max
+            t_max = max(self._channel_clocks.get(c, 0.0) for c in target_channels)
+            for c in target_channels:
+                self._channel_clocks[c] = t_max
         return self
 
     def sample(
@@ -185,24 +191,62 @@ class PulseSequence:
         """
         eff_dt = dt if dt is not None else min(self.duration / 400, 5e-10)
         times, waveforms = self.sample(dt=eff_dt, alpha=transmon.alpha)
-        drive_ch = transmon.drive
 
-        if drive_ch in waveforms:
-            drive_wave = waveforms[drive_ch]
-        else:
-            drive_wave = np.zeros_like(times, dtype=complex)
+        # 1. Collect XY drive waveform from charge_line or legacy channels
+        charge_ch_names = {
+            normalize_channel(transmon.charge_line),
+            f"{transmon.name}.charge",
+            f"{transmon.name}.xy",
+            f"{transmon.name}.drive",
+            "drive",
+        }
+        drive_wave = np.zeros_like(times, dtype=complex)
+        for ch_name in charge_ch_names:
+            if ch_name in waveforms:
+                drive_wave = drive_wave + waveforms[ch_name]
 
         i_coeffs = drive_wave.real
         q_coeffs = drive_wave.imag
 
-        h0 = transmon.H0(f_d=f_d)
+        # 2. Collect Z flux waveform from flux_line
+        flux_ch_names = {
+            normalize_channel(transmon.flux_line),
+            f"{transmon.name}.flux",
+            f"{transmon.name}.z",
+            "flux",
+        }
+        flux_wave = np.zeros_like(times, dtype=float)
+        has_flux_pulse = False
+        for ch_name in flux_ch_names:
+            if ch_name in waveforms:
+                flux_wave = flux_wave + waveforms[ch_name].real
+                has_flux_pulse = True
+
+        ref_fd = f_d if f_d is not None else transmon.frequency_at_flux(transmon.flux_offset)
         h_x = transmon.H_drive_x
         h_y = transmon.H_drive_y
 
-        evo = qutip.QobjEvo(
-            [h0, [h_x, i_coeffs], [h_y, q_coeffs]],
-            tlist=times,
-        )
+        if has_flux_pulse and transmon.d < 1.0:
+            # Time-dependent detuning: 2*pi * (f_q(Phi(t)) - f_d) * n
+            total_flux = transmon.flux_offset + flux_wave
+            freqs_t = np.array([transmon.frequency_at_flux(phi) for phi in total_flux])
+            detune_coeffs = 2.0 * np.pi * (freqs_t - ref_fd)
+            h_kerr = np.pi * transmon.alpha * (transmon.ad * transmon.ad * transmon.a * transmon.a)
+            evo_terms = [
+                h_kerr,
+                [transmon.n, detune_coeffs],
+                [h_x, i_coeffs],
+                [h_y, q_coeffs],
+            ]
+        else:
+            h0 = transmon.H0(f_d=ref_fd)
+            evo_terms = [
+                h0,
+                [h_x, i_coeffs],
+                [h_y, q_coeffs],
+            ]
+
+        evo = qutip.QobjEvo(evo_terms, tlist=times)
         return times, evo
 
     def plot(
