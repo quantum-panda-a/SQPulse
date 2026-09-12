@@ -192,35 +192,21 @@ class PulseSequence:
         eff_dt = dt if dt is not None else min(self.duration / 400, 5e-10)
         times, waveforms = self.sample(dt=eff_dt, alpha=transmon.alpha)
 
-        # 1. Collect XY drive waveform from charge_line or legacy channels
-        charge_ch_names = {
-            normalize_channel(transmon.charge_line),
-            f"{transmon.name}.charge",
-            f"{transmon.name}.xy",
-            f"{transmon.name}.drive",
-            "drive",
-        }
-        drive_wave = np.zeros_like(times, dtype=complex)
-        for ch_name in charge_ch_names:
-            if ch_name in waveforms:
-                drive_wave = drive_wave + waveforms[ch_name]
+        # 1. Collect XY drive waveform from xy line
+        xy_ch_name = normalize_channel(transmon.xy)
+        drive_wave = waveforms.get(xy_ch_name, np.zeros_like(times, dtype=complex))
 
         i_coeffs = drive_wave.real
         q_coeffs = drive_wave.imag
 
-        # 2. Collect Z flux waveform from flux_line
-        flux_ch_names = {
-            normalize_channel(transmon.flux_line),
-            f"{transmon.name}.flux",
-            f"{transmon.name}.z",
-            "flux",
-        }
-        flux_wave = np.zeros_like(times, dtype=float)
-        has_flux_pulse = False
-        for ch_name in flux_ch_names:
-            if ch_name in waveforms:
-                flux_wave = flux_wave + waveforms[ch_name].real
-                has_flux_pulse = True
+        # 2. Collect Z flux waveform from z line
+        z_ch_name = normalize_channel(transmon.z)
+        if z_ch_name in waveforms:
+            flux_wave = waveforms[z_ch_name].real
+            has_flux_pulse = True
+        else:
+            flux_wave = np.zeros_like(times, dtype=float)
+            has_flux_pulse = False
 
         ref_fd = f_d if f_d is not None else transmon.frequency_at_flux(transmon.flux_offset)
         h_x = transmon.H_drive_x

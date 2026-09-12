@@ -80,9 +80,9 @@ $$f_q(\Phi) = (f_q + |\alpha|) \left[ \cos^2\left(\pi \frac{\Phi}{\Phi_0}\right)
 * $d < 1.0$ 时，可通过外加磁通 $\Phi/\Phi_0$ 动态调谐比特频率。
 
 每个 Transmon 对象提供三条专职物理引线（Channel）：
-* **`q.charge_line`**（别名 `q.xy`, `q.drive`）：电容耦合线，注入微波正交脉冲 $I(t), Q(t)$，驱动 Bloch 球水平轴旋转。
-* **`q.flux_line`**（别名 `q.z`）：互感耦合线，注入纳秒级基带磁通偏置脉冲，动态改变跃迁频率 $f_q(t)$。
-* **`q.readout_line`**（别名 `q.ro`）：读出微波馈线，连接微波谐振腔（Readout Resonator）。
+* **`q.xy`**：电容耦合线，注入微波正交脉冲 $I(t), Q(t)$，驱动 Bloch 球水平轴旋转。
+* **`q.z`**：互感耦合线，注入纳秒级基带磁通偏置脉冲，动态改变跃迁频率 $f_q(t)$。
+* **`q.ro`**：读出微波馈线，连接微波谐振腔（Readout Resonator）。
 
 ### 3. 微波驱动哈密顿量（RWA 下）
 
@@ -189,20 +189,20 @@ q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.2, levels=3, t1=25.0 *
 
 # 2. 编排多通道脉冲序列 (包含 XY 驱动、Z 磁通调频与腔读出)
 seq = PulseSequence(name="control_and_readout")
-# (1) 在 charge_line (XY) 施加 pi/2 脉冲
-seq.add(q.charge_line, GaussianPulse(duration=30 * ns, amp=0.5))
+# (1) 在 xy (XY) 施加 pi/2 脉冲
+seq.add(q.xy, GaussianPulse(duration=30 * ns, amp=0.5))
 seq.sync()
 
-# (2) 在 flux_line (Z) 施加快速磁通脉冲调制频率
-seq.add(q.flux_line, FlatTopPulse(duration=40 * ns, amp=0.1, ramp_time=4 * ns))
+# (2) 在 z (Z) 施加快速磁通脉冲调制频率
+seq.add(q.z, FlatTopPulse(duration=40 * ns, amp=0.1, ramp_time=4 * ns))
 seq.sync()
 
 # (3) 施加第二个 pi/2 脉冲
-seq.add(q.charge_line, GaussianPulse(duration=30 * ns, amp=0.5))
+seq.add(q.xy, GaussianPulse(duration=30 * ns, amp=0.5))
 seq.sync()
 
-# (4) 在 readout_line (RO) 施加 1 us 微波读出脉冲
-seq.add(q.readout_line, FlatTopPulse(duration=1000 * ns, amp=1.0, ramp_time=20 * ns))
+# (4) 在 ro (RO) 施加 1 us 微波读出脉冲
+seq.add(q.ro, FlatTopPulse(duration=1000 * ns, amp=1.0, ramp_time=20 * ns))
 
 # 绘制多通道时间轴对齐图
 seq.plot()

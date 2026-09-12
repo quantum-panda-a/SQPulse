@@ -97,9 +97,9 @@ class T1Experiment:
         p1_list = []
         for d in delays:
             seq = PulseSequence(name=f"t1_delay_{d:.2e}s")
-            seq.add(transmon.drive, pi_pulse)
+            seq.add(transmon.xy, pi_pulse)
             if d > 0:
-                seq.delay(transmon.drive, d)
+                seq.delay(transmon.xy, d)
             res = Measurement.run(transmon, seq, backend=backend, **b_opts)
             if hasattr(res, "final_population"):
                 p1_list.append(res.final_population(1))

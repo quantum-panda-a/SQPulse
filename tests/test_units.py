@@ -184,7 +184,7 @@ def test_pulse_sequence_sampling_validation():
     """PulseSequence.sample should validate dt against total sequence duration."""
     seq = PulseSequence("seq_test")
     p = GaussianPulse(duration=40e-9)
-    seq.add("drive", p)
+    seq.add("xy", p)
 
     # dt=0.1 s is much larger than 40 ns sequence duration
     with pytest.raises(ValueError, match="cannot be greater than or equal to total sequence duration"):

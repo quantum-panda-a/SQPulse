@@ -109,10 +109,10 @@ class RamseyExperiment:
         p1_list = []
         for d in delays:
             seq = PulseSequence(name=f"ramsey_{d:.2e}s")
-            seq.add(transmon.drive, pi_half_pulse)
+            seq.add(transmon.xy, pi_half_pulse)
             if d > 0:
-                seq.delay(transmon.drive, d)
-            seq.add(transmon.drive, pi_half_pulse)
+                seq.delay(transmon.xy, d)
+            seq.add(transmon.xy, pi_half_pulse)
 
             res = Measurement.run(transmon, seq, backend=backend, **b_opts)
             if hasattr(res, "final_population"):

@@ -122,7 +122,7 @@ class RabiExperiment:
         p1_list = []
         for a in amps:
             p = pulse_type(duration=duration, amp=a, **pulse_kwargs)
-            seq = PulseSequence(name=f"rabi_a_{a:.2e}").add(transmon.drive, p)
+            seq = PulseSequence(name=f"rabi_a_{a:.2e}").add(transmon.xy, p)
             res = Measurement.run(transmon, seq, backend=backend, **b_opts)
             if hasattr(res, "final_population"):
                 p1_list.append(res.final_population(1))
@@ -177,7 +177,7 @@ class RabiExperiment:
         p1_list = []
         for d in durations:
             p = pulse_type(duration=d, amp=amp, **pulse_kwargs)
-            seq = PulseSequence(name=f"rabi_t_{d:.2e}").add(transmon.drive, p)
+            seq = PulseSequence(name=f"rabi_t_{d:.2e}").add(transmon.xy, p)
             res = Measurement.run(transmon, seq, backend=backend, **b_opts)
             if hasattr(res, "final_population"):
                 p1_list.append(res.final_population(1))

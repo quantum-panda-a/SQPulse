@@ -8,7 +8,7 @@ class Channel:
     """Represents a physical or virtual control line (e.g., microwave drive, flux bias).
 
     Args:
-        name (str): Identifier for this channel (e.g. 'q0.drive').
+        name (str): Identifier for this channel (e.g. 'q0.xy').
         description (Optional[str]): Description or notes.
     """
 

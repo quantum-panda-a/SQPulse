@@ -390,7 +390,7 @@ class QubitSpectroscopyExperiment:
         )
 
         # Pre-build sequence template
-        seq = PulseSequence(name="spectroscopy_probe").add(transmon.drive, probe_pulse)
+        seq = PulseSequence(name="spectroscopy_probe").add(transmon.xy, probe_pulse)
 
         # Run sweep
         p_all: Dict[int, List[float]] = {n: [] for n in range(transmon.levels)}
@@ -497,7 +497,7 @@ class QubitSpectroscopyExperiment:
 
         for i, a in enumerate(amps):
             current_pulse = actual_pulse_type(duration=actual_duration, amp=a, **pulse_kwargs)
-            seq = PulseSequence(name=f"pwr_spec_a_{a:.2f}").add(transmon.drive, current_pulse)
+            seq = PulseSequence(name=f"pwr_spec_a_{a:.2f}").add(transmon.xy, current_pulse)
             for j, f_d in enumerate(resolved_freqs):
                 res = Simulator.run(transmon, seq, dt=dt, f_d=float(f_d))
                 p0 = res.final_population(0)

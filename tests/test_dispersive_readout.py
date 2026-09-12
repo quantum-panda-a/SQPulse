@@ -63,7 +63,7 @@ def test_dispersive_readout_backend_ground_and_excited():
     # 1. Ground state |0> measurement
     seq_ground = PulseSequence()
     # Add a delay so sequence has duration
-    seq_ground.delay(q.charge_line, 20e-9)
+    seq_ground.delay(q.xy, 20e-9)
 
     res_ground = Measurement.run(
         qubit=q,
@@ -80,8 +80,13 @@ def test_dispersive_readout_backend_ground_and_excited():
     assert counts_0.get(0, 0) > 900
     assert res_ground.fidelity > 0.90
 
-    # 2. Excited state |1> measurement (after pi pulse on charge_line)
-    seq_excited = PulseSequence().add(q.charge_line, SquarePulse(duration=20e-9, amp=v0_pi))
+    # 2. Excited state |1> measurement (after pi pulse on xy and explicit pulse on ro)
+    seq_excited = (
+        PulseSequence()
+        .add(q.xy, SquarePulse(duration=20e-9, amp=v0_pi))
+        .sync()
+        .add(q.ro, SquarePulse(duration=1000e-9, amp=1.0))
+    )
     res_excited = Measurement.run(
         qubit=q,
         sequence=seq_excited,

@@ -19,7 +19,7 @@ def test_resonant_rabi_flip():
     assert np.isclose(v0_pi, 0.5)
 
     p_pi = SquarePulse(duration=duration, amp=v0_pi)
-    seq = PulseSequence().add(q.drive, p_pi)
+    seq = PulseSequence().add(q.xy, p_pi)
     res = Simulator.run(q, seq, dt=2e-10)
 
     # Final population of |1> should be ~1.0
@@ -40,7 +40,7 @@ def test_raw_omega_backward_compatibility():
 
     with pytest.warns(UserWarning, match=r"exceeds the normalized range \[-1, 1\]"):
         p_pi = SquarePulse(duration=duration, amp=omega_raw)
-    seq = PulseSequence().add(q_raw.drive, p_pi)
+    seq = PulseSequence().add(q_raw.xy, p_pi)
     res = Simulator.run(q_raw, seq, dt=2e-10)
     assert np.isclose(res.final_population(1), 1.0, atol=1e-3)
 
@@ -55,13 +55,13 @@ def test_drag_leakage_suppression():
 
     # Pulse without DRAG
     p_nodrag = GaussianPulse(duration=duration, amp=amp_pi, drag=0.0)
-    seq_nodrag = PulseSequence().add(q.drive, p_nodrag)
+    seq_nodrag = PulseSequence().add(q.xy, p_nodrag)
     res_nodrag = Simulator.run(q, seq_nodrag, dt=5e-11)
     leakage_nodrag = res_nodrag.final_population(2)
 
     # Pulse with dimensionless DRAG beta=1.0
     p_drag = DRAGPulse(duration=duration, amp=amp_pi, drag=1.0)
-    seq_drag = PulseSequence().add(q.drive, p_drag)
+    seq_drag = PulseSequence().add(q.xy, p_drag)
     res_drag = Simulator.run(q, seq_drag, dt=5e-11)
     leakage_drag = res_drag.final_population(2)
 
@@ -72,7 +72,7 @@ def test_drag_leakage_suppression():
 
 
 def test_dynamic_flux_pulse_phase_accumulation():
-    """A flux pulse on q.flux_line dynamically shifts the qubit frequency and accumulates a Z phase."""
+    """A flux pulse on q.z dynamically shifts the qubit frequency and accumulates a Z phase."""
     from sqpulse.pulses import SquarePulse
     from sqpulse import Simulator
 
@@ -91,19 +91,19 @@ def test_dynamic_flux_pulse_phase_accumulation():
 
     # Sequence 1: pi/2 - delay(tau) without flux pulse - pi/2 (resonant, so accumulates 0 phase -> state flips to |1>)
     seq_resonant = PulseSequence()
-    seq_resonant.add(q.charge_line, p_pi2)
-    seq_resonant.delay(q.charge_line, tau)
-    seq_resonant.add(q.charge_line, p_pi2)
+    seq_resonant.add(q.xy, p_pi2)
+    seq_resonant.delay(q.xy, tau)
+    seq_resonant.add(q.xy, p_pi2)
     res_res = Simulator.run(q, seq_resonant, dt=5e-11)
     assert np.isclose(res_res.final_population(1), 1.0, atol=1e-2)
 
     # Sequence 2: pi/2 - flux pulse(tau, amp=0.1) - pi/2 (accumulates pi phase -> rotates back to |0>)
     seq_flux = PulseSequence()
-    seq_flux.add(q.charge_line, p_pi2)
-    seq_flux.sync()  # Advance flux_line clock to end of first pulse
-    seq_flux.add(q.flux_line, p_flux)
-    seq_flux.sync()  # Advance charge_line clock to end of flux pulse
-    seq_flux.add(q.charge_line, p_pi2)
+    seq_flux.add(q.xy, p_pi2)
+    seq_flux.sync()  # Advance z clock to end of first pulse
+    seq_flux.add(q.z, p_flux)
+    seq_flux.sync()  # Advance xy clock to end of flux pulse
+    seq_flux.add(q.xy, p_pi2)
     res_flux = Simulator.run(q, seq_flux, dt=5e-11)
     # Because of the pi phase shift, the second pi/2 rotation returns state to |0>
     assert np.isclose(res_flux.final_population(0), 1.0, atol=1e-2)

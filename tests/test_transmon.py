@@ -83,14 +83,14 @@ def test_transmon_from_circuit():
 
 def test_transmon_control_lines():
     q = Transmon("q0")
-    assert q.charge_line.name == "q0.charge"
-    assert q.xy == q.charge_line
-    assert q.flux_line.name == "q0.flux"
-    assert q.z == q.flux_line
-    assert q.readout_line.name == "q0.readout"
-    assert q.ro == q.readout_line
-    # Legacy drive compatibility
-    assert q.drive == q.charge_line
+    assert q.xy.name == "q0.xy"
+    assert q.z.name == "q0.z"
+    assert q.ro.name == "q0.ro"
+    # Ensure legacy attributes are completely removed
+    assert not hasattr(q, "charge_line")
+    assert not hasattr(q, "flux_line")
+    assert not hasattr(q, "readout_line")
+    assert not hasattr(q, "drive")
 
 
 def test_transmon_single_junction_flux_insensitivity():

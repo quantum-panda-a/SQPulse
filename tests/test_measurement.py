@@ -11,7 +11,7 @@ def test_measurement_projective_backend_run():
     v0_pi = np.pi / (q.omega_d * duration)
 
     # Pi pulse sequence
-    seq = PulseSequence().add(q.charge_line, SquarePulse(duration=duration, amp=v0_pi))
+    seq = PulseSequence().add(q.xy, SquarePulse(duration=duration, amp=v0_pi))
 
     # Run via Measurement.run with default backend
     res = Measurement.run(q, seq, dt=5e-10)
@@ -31,7 +31,7 @@ def test_projective_measurement_shots_and_counts():
     v0_pi2 = 0.5 * np.pi / (q.omega_d * duration)
 
     # Pi/2 pulse prepares (|0> + |1>)/sqrt(2)
-    seq = PulseSequence().add(q.charge_line, SquarePulse(duration=duration, amp=v0_pi2))
+    seq = PulseSequence().add(q.xy, SquarePulse(duration=duration, amp=v0_pi2))
 
     res = Measurement.run(q, seq, backend="projective", shots=2000, seed=42)
     assert res.shots is not None

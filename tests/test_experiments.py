@@ -29,7 +29,7 @@ def test_amplitude_rabi_calibration():
 
     # Verify that applying amp_pi achieves state inversion (P1 ~ 1.0)
     pi_pulse = GaussianPulse(duration=duration, amp=amp_pi)
-    seq = PulseSequence().add(q.drive, pi_pulse)
+    seq = PulseSequence().add(q.xy, pi_pulse)
     sim_res = Simulator.run(q, seq, dt=5e-10)
 
     assert np.isclose(sim_res.final_population(1), 1.0, atol=0.03)

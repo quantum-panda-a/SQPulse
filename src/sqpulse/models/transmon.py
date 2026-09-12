@@ -72,16 +72,10 @@ class Transmon:
             # Default physical drive coupling: 2*pi * 50 MHz (rad/s)
             self.omega_d = 2.0 * np.pi * 50.0e6
 
-        # Physical control lines
-        self.charge_line = Channel(f"{self.name}.charge", description=f"Charge/XY line for {self.name}")
-        self.xy = self.charge_line
-        self.flux_line = Channel(f"{self.name}.flux", description=f"Flux/Z line for {self.name}")
-        self.z = self.flux_line
-        self.readout_line = Channel(f"{self.name}.readout", description=f"Readout resonator line for {self.name}")
-        self.ro = self.readout_line
-
-        # Legacy backward-compatible drive channel
-        self.drive = self.charge_line
+        # Physical control lines: xy, z, ro
+        self.xy = Channel(f"{self.name}.xy", description=f"XY line for {self.name}")
+        self.z = Channel(f"{self.name}.z", description=f"Z flux line for {self.name}")
+        self.ro = Channel(f"{self.name}.ro", description=f"Readout resonator line for {self.name}")
 
         # Precompute standard operators in this mode's Hilbert space
         self._a = qutip.destroy(self.levels)

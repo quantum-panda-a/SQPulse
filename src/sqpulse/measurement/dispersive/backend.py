@@ -169,7 +169,7 @@ class DispersiveReadoutBackend(MeasurementBackend):
             transmon: Physical Transmon model.
             sequence: Control pulse sequence executed before readout.
             resonator: Physical ReadoutResonator. If None, uses default 7 GHz cavity.
-            readout_pulse: Pulse applied to readout resonator. If None, checks sequence.readout_line or uses default FlatTop.
+            readout_pulse: Pulse applied to readout resonator. If None, checks sequence channel transmon.ro or uses default FlatTop.
             shots: Number of measurement shots to sample (default 1000).
             snr_db: Readout signal-to-noise ratio in dB (default 12.0 dB).
             f_ro: Readout carrier frequency in Hz (defaults to resonator bare frequency f_r).
@@ -204,15 +204,9 @@ class DispersiveReadoutBackend(MeasurementBackend):
 
         # 2. Determine readout pulse
         if readout_pulse is None:
-            ro_keys = [
-                normalize_channel(transmon.readout_line),
-                f"{transmon.name}.readout",
-                f"{transmon.name}.ro",
-            ]
-            for rk in ro_keys:
-                if rk in sequence._channels and sequence._channels[rk]:
-                    readout_pulse = sequence._channels[rk][-1].pulse
-                    break
+            ro_key = normalize_channel(transmon.ro)
+            if ro_key in sequence._channels and sequence._channels[ro_key]:
+                readout_pulse = sequence._channels[ro_key][-1].pulse
 
         if readout_pulse is None:
             readout_pulse = FlatTopPulse(duration=1000e-9, ramp_time=20e-9, amp=1.0)
