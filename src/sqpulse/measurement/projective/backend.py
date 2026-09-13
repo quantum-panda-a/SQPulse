@@ -56,7 +56,10 @@ class ProjectiveBackend(MeasurementBackend):
         if c_ops:
             all_c_ops.extend(c_ops)
 
-        mesolve_opts = solver_options or {}
+        mesolve_opts = dict(solver_options) if solver_options else {}
+        if "max_step" not in mesolve_opts and len(times) > 1:
+            mesolve_opts["max_step"] = float(times[1] - times[0])
+
         res = qutip.mesolve(
             evo,
             init_state,

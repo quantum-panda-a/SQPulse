@@ -186,7 +186,7 @@ def test_spectroscopy_levels_warning():
 
 def test_rabi_with_dispersive_backend():
     # Test that RabiExperiment can execute with backend='dispersive'
-    q = Transmon("q_exp_disp", f_q=5.0e9, levels=2, omega_d=2.0 * np.pi * 50e6)
+    q = Transmon("q_exp_disp", f_q=5.0e9, levels=2, omega_d=50e6)
     rabi_res = RabiExperiment.amplitude_rabi(
         q,
         pulse_type=SquarePulse,

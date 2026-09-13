@@ -1,7 +1,9 @@
 """Transmon qubit physical model for SQPulse in SI units."""
 
 from __future__ import annotations
+from pathlib import Path
 from typing import List, Optional, Tuple, Union
+import json
 import numpy as np
 import qutip
 
@@ -34,11 +36,56 @@ class Transmon:
         levels (int): Number of Hilbert space levels to model (default 4: |0>, |1>, |2>, |3>).
         t1 (float): Energy relaxation time T1 in seconds (default inf).
         t2 (float): Dephasing time T2 in seconds (default inf).
-        thermal_population (float): Excited state thermal occupation n_th (default 0.0).
-        omega_d (Optional[float]): Physical drive coupling strength in rad/s (defaults to 2*pi*50 MHz = 3.14e8 rad/s).
+        omega_d (Optional[float]): Physical drive coupling strength in Hz (defaults to 50 MHz = 50e6 Hz).
+            Automatically multiplied by 2*pi internally to obtain angular frequency.
         v_phi0 (Optional[float]): Voltage required on Z line to induce one flux quantum Phi_0 in V / Phi_0 (default None).
             When None, pulse amplitudes on the Z channel are treated directly as flux in units of Phi_0.
     """
+
+    @staticmethod
+    def thermal_population_from_temperature(f_q: float, temperature: float) -> float:
+        """Calculate Bose-Einstein thermal occupation n_th from qubit frequency f_q and bath temperature T.
+
+        .. math::
+            n_{\\text{th}} = \\frac{1}{\\exp\\left(\\frac{h f_q}{k_B T}\\right) - 1}
+
+        Args:
+            f_q: Qubit transition frequency in Hz.
+            temperature: Bath temperature in Kelvin (K).
+
+        Returns:
+            Thermal population n_th (float >= 0.0).
+        """
+        if temperature is None or temperature <= 0:
+            return 0.0
+        import scipy.constants as const
+        x = (const.h * float(f_q)) / (const.k * float(temperature))
+        if x > 500.0:
+            # Underflow / negligible thermal population
+            return 0.0
+        if x < 1e-15:
+            return float(1.0 / x)
+        return float(1.0 / (np.exp(x) - 1.0))
+
+    @staticmethod
+    def temperature_from_thermal_population(f_q: float, n_th: float) -> float:
+        """Calculate effective bath temperature in Kelvin from qubit frequency and thermal occupation n_th.
+
+        .. math::
+            T = \\frac{h f_q}{k_B \\ln(1 + 1 / n_{\\text{th}})}
+
+        Args:
+            f_q: Qubit transition frequency in Hz.
+            n_th: Thermal population n_th.
+
+        Returns:
+            Equivalent temperature in Kelvin (K).
+        """
+        if n_th is None or n_th <= 0:
+            return 0.0
+        import scipy.constants as const
+        x = np.log(1.0 + 1.0 / float(n_th))
+        return float((const.h * float(f_q)) / (const.k * x))
 
     def __init__(
         self,
@@ -50,9 +97,10 @@ class Transmon:
         levels: int = 4,
         t1: float = np.inf,
         t2: float = np.inf,
-        thermal_population: float = 0.0,
+        thermal_population: Optional[float] = None,
         omega_d: Optional[float] = None,
         v_phi0: Optional[float] = None,
+        temperature: Optional[Union[float, str]] = None,
     ):
         if levels < 2:
             raise ValueError(f"Transmon levels must be >= 2, got {levels}")
@@ -67,13 +115,31 @@ class Transmon:
         self.levels = int(levels)
         self.t1 = float(t1)
         self.t2 = float(t2)
-        self.thermal_population = float(thermal_population)
         self.v_phi0 = float(v_phi0) if v_phi0 is not None else None
 
-        if omega_d is not None:
-            self.omega_d = float(omega_d)
+        # Resolve temperature and thermal_population
+        from ..units import parse_quantity
+
+        if temperature is not None:
+            t_val = parse_quantity(temperature)
+            if t_val is not None and t_val < 0:
+                raise ValueError(f"Temperature must be non-negative, got {t_val} K")
+            self._temperature = float(t_val) if t_val is not None else 0.0
+            self._thermal_population = self.thermal_population_from_temperature(self.f_q, self._temperature)
+        elif thermal_population is not None and float(thermal_population) > 0:
+            t_pop = float(thermal_population)
+            if t_pop < 0:
+                raise ValueError(f"Thermal population must be non-negative, got {t_pop}")
+            self._thermal_population = t_pop
+            self._temperature = self.temperature_from_thermal_population(self.f_q, self._thermal_population)
         else:
-            # Default physical drive coupling: 2*pi * 50 MHz (rad/s)
+            self._temperature = 0.0
+            self._thermal_population = 0.0
+
+        if omega_d is not None:
+            self.omega_d = 2.0 * np.pi * float(parse_quantity(omega_d))
+        else:
+            # Default physical drive coupling: 50 MHz (rad/s = 2*pi * 50 MHz)
             self.omega_d = 2.0 * np.pi * 50.0e6
 
         # Physical control lines: xy, z, ro
@@ -97,6 +163,38 @@ class Transmon:
         self._sx = zero * one.dag() + one * zero.dag()
         self._sy = -1j * (zero * one.dag() - one * zero.dag())
         self._sz = zero * zero.dag() - one * one.dag()
+
+    @property
+    def temperature(self) -> float:
+        """Effective qubit thermal bath temperature in Kelvin (K)."""
+        return self._temperature
+
+    @temperature.setter
+    def temperature(self, value: Union[float, str, None]):
+        from ..units import parse_quantity
+        val = parse_quantity(value) if value is not None else 0.0
+        if val is not None and val < 0:
+            raise ValueError(f"Temperature must be non-negative, got {val} K")
+        self._temperature = float(val) if val is not None else 0.0
+        self._thermal_population = self.thermal_population_from_temperature(self.f_q, self._temperature)
+
+    @property
+    def thermal_population(self) -> float:
+        """Excited state thermal occupation n_th."""
+        return self._thermal_population
+
+    @thermal_population.setter
+    def thermal_population(self, value: Union[float, int, None]):
+        val = float(value) if value is not None else 0.0
+        if val < 0:
+            raise ValueError(f"Thermal population must be non-negative, got {val}")
+        self._thermal_population = val
+        self._temperature = self.temperature_from_thermal_population(self.f_q, self._thermal_population)
+
+    @property
+    def omega_d_hz(self) -> float:
+        """Physical drive coupling strength in Hz: omega_d / (2*pi)."""
+        return self.omega_d / (2.0 * np.pi)
 
     @property
     def a(self) -> qutip.Qobj:
@@ -287,7 +385,8 @@ class Transmon:
         levels: int = 4,
         t1: float = np.inf,
         t2: float = np.inf,
-        thermal_population: float = 0.0,
+        temperature: Optional[Union[float, str]] = None,
+        thermal_population: Optional[float] = None,
         d: float = 1.0,
         flux_offset: float = 0.0,
         m_mutual: Optional[float] = None,
@@ -343,7 +442,7 @@ class Transmon:
         q_zpf = np.sqrt(0.5 * hbar * omega_q * c_sigma)
         omega_chip = (float(c_d) / c_sigma) * (q_zpf / hbar)
         alpha_line = 10.0 ** (float(attenuation_dB) / 20.0)
-        omega_d = omega_chip * alpha_line * float(v_max)
+        omega_d_rad = omega_chip * alpha_line * float(v_max)
 
         resolved_v_phi0 = v_phi0
         if resolved_v_phi0 is None and m_mutual is not None:
@@ -360,8 +459,9 @@ class Transmon:
             levels=levels,
             t1=t1,
             t2=t2,
+            temperature=temperature,
             thermal_population=thermal_population,
-            omega_d=omega_d,
+            omega_d=omega_d_rad / (2.0 * np.pi),
             v_phi0=resolved_v_phi0,
             **kwargs,
         )
@@ -380,7 +480,141 @@ class Transmon:
     def __repr__(self) -> str:
         d_str = f", d={self.d:.2f}" if self.d < 1.0 else ""
         v_phi0_str = f", v_phi0={self.v_phi0:.3f}V/Phi_0" if self.v_phi0 is not None else ""
+        t_str = f", T={self.temperature * 1e3:.1f}mK" if self.temperature > 0 else ""
         return (
-            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz{d_str}{v_phi0_str}, "
-            f"levels={self.levels}, omega_d={self.omega_d:.3e}rad/s, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
+            f"Transmon('{self.name}', f_q={self.f_q:.3e}Hz, alpha={self.alpha:.3e}Hz{d_str}{v_phi0_str}{t_str}, "
+            f"levels={self.levels}, omega_d={self.omega_d_hz/1e6:.2f}MHz, T1={self.t1:.2e}s, T2={self.t2:.2e}s)"
         )
+
+    def to_dict(self, human_readable: bool = False) -> dict:
+        """Serialize Transmon configuration to a dictionary.
+
+        Args:
+            human_readable: If True, formats numerical quantities with convenient SI unit strings (e.g. '5.0 GHz').
+        """
+        return {
+            "name": self.name,
+            "f_q": f"{self.f_q / 1e9:.6g} GHz" if human_readable else self.f_q,
+            "alpha": f"{self.alpha / 1e6:.6g} MHz" if human_readable else self.alpha,
+            "d": self.d,
+            "flux_offset": self.flux_offset,
+            "levels": self.levels,
+            "t1": "inf" if np.isinf(self.t1) else (f"{self.t1 / 1e-6:.6g} us" if human_readable else self.t1),
+            "t2": "inf" if np.isinf(self.t2) else (f"{self.t2 / 1e-6:.6g} us" if human_readable else self.t2),
+            "temperature": f"{self.temperature * 1e3:.2f} mK" if (human_readable and self.temperature > 0) else self.temperature,
+            "thermal_population": self.thermal_population,
+            "omega_d": f"{self.omega_d_hz / 1e6:.6g} MHz" if human_readable else self.omega_d_hz,
+            "v_phi0": self.v_phi0,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Transmon:
+        """Construct a Transmon instance from a dictionary.
+
+        Values can be pure numbers (in SI units) or strings with units (e.g. '5.0 GHz', '25 us', '35 mK').
+        """
+        from ..units import parse_quantity
+
+        name = data.get("name", "q0")
+        f_q = parse_quantity(data.get("f_q", 5.0e9))
+        alpha = parse_quantity(data.get("alpha", -250.0e6))
+        d = float(data.get("d", 1.0))
+        flux_offset = parse_quantity(data.get("flux_offset", 0.0), default=0.0)
+        levels = int(data.get("levels", 4))
+        t1 = parse_quantity(data.get("t1", float("inf")), default=float("inf"))
+        t2 = parse_quantity(data.get("t2", float("inf")), default=float("inf"))
+        temperature = data.get("temperature", None)
+        thermal_population = data.get("thermal_population", None)
+        raw_omega_d = data.get("omega_d", None)
+        if raw_omega_d is not None:
+            if isinstance(raw_omega_d, str) and "rad" in raw_omega_d.lower():
+                omega_d = parse_quantity(raw_omega_d) / (2.0 * np.pi)
+            else:
+                omega_d = parse_quantity(raw_omega_d)
+        else:
+            omega_d = None
+        v_phi0 = parse_quantity(data.get("v_phi0", None))
+
+        if "c_d" in data or "c_g" in data:
+            c_d = parse_quantity(data.get("c_d", 5.0e-17))
+            c_g = parse_quantity(data.get("c_g", 70.0e-15))
+            attenuation_dB = float(data.get("attenuation_dB", -60.0))
+            v_max = parse_quantity(data.get("v_max", 1.0))
+            m_mutual = parse_quantity(data.get("m_mutual", None))
+            attenuation_z_dB = float(data.get("attenuation_z_dB", -20.0))
+            z0 = parse_quantity(data.get("z0", 50.0))
+
+            return cls.from_circuit(
+                name=name,
+                c_d=c_d,
+                c_g=c_g,
+                f_q=f_q,
+                alpha=alpha,
+                attenuation_dB=attenuation_dB,
+                v_max=v_max,
+                levels=levels,
+                t1=t1,
+                t2=t2,
+                temperature=temperature,
+                thermal_population=thermal_population,
+                d=d,
+                flux_offset=flux_offset,
+                m_mutual=m_mutual,
+                attenuation_z_dB=attenuation_z_dB,
+                z0=z0,
+                v_phi0=v_phi0,
+            )
+
+        return cls(
+            name=name,
+            f_q=f_q,
+            alpha=alpha,
+            d=d,
+            flux_offset=flux_offset,
+            levels=levels,
+            t1=t1,
+            t2=t2,
+            temperature=temperature,
+            thermal_population=thermal_population,
+            omega_d=omega_d,
+            v_phi0=v_phi0,
+        )
+
+    @classmethod
+    def from_json(cls, source: Union[str, Path]) -> Transmon:
+        """Load a Transmon model from a JSON file path or a raw JSON string.
+
+        Args:
+            source: A file path (str or Path) or a valid JSON string.
+        """
+        p = Path(source) if isinstance(source, (str, Path)) else None
+        if p is not None and p.is_file():
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = json.loads(str(source))
+
+        return cls.from_dict(data)
+
+    def to_json(
+        self,
+        filepath_or_buf: Optional[Union[str, Path]] = None,
+        indent: int = 2,
+        human_readable: bool = False,
+    ) -> Optional[str]:
+        """Serialize Transmon configuration to a JSON file or JSON string.
+
+        Args:
+            filepath_or_buf: Optional destination file path. If None, returns the JSON string.
+            indent: Indentation level for pretty-printing JSON.
+            human_readable: If True, uses unit strings (e.g. '5.0 GHz').
+        """
+        data = self.to_dict(human_readable=human_readable)
+        if filepath_or_buf is not None:
+            p = Path(filepath_or_buf)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=indent)
+            return None
+        return json.dumps(data, indent=indent)
+

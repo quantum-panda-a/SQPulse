@@ -36,7 +36,7 @@ from .pulses import (
     spectral_leakage,
     compare_pulses,
 )
-from .models import Transmon, ReadoutResonator
+from .models import Transmon, ReadoutResonator, DeviceModels, load_models, save_models
 from .sequence import PulseSequence, Channel
 from .measurement import (
     Measurement,
@@ -91,6 +91,12 @@ from .units import (
     krad_s,
     Mrad_s,
     Grad_s,
+    K,
+    kelvin,
+    mK,
+    millikelvin,
+    uK,
+    parse_quantity,
 )
 
 __all__ = [
@@ -126,6 +132,9 @@ __all__ = [
     "compare_pulses",
     "Transmon",
     "ReadoutResonator",
+    "DeviceModels",
+    "load_models",
+    "save_models",
     "PulseSequence",
     "Channel",
     "Simulator",
@@ -176,4 +185,10 @@ __all__ = [
     "krad_s",
     "Mrad_s",
     "Grad_s",
+    "K",
+    "kelvin",
+    "mK",
+    "millikelvin",
+    "uK",
+    "parse_quantity",
 ]

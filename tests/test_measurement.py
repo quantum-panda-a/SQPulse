@@ -6,7 +6,7 @@ from sqpulse import Transmon, PulseSequence, SquarePulse, Measurement, Projectiv
 
 
 def test_measurement_projective_backend_run():
-    q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=2.0 * np.pi * 50e6)
+    q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=50e6)
     duration = 20e-9
     v0_pi = np.pi / (q.omega_d * duration)
 
@@ -26,7 +26,7 @@ def test_measurement_projective_backend_run():
 
 
 def test_projective_measurement_shots_and_counts():
-    q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=2.0 * np.pi * 50e6)
+    q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=50e6)
     duration = 20e-9
     v0_pi2 = 0.5 * np.pi / (q.omega_d * duration)
 

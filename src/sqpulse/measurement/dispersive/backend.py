@@ -184,8 +184,8 @@ class DispersiveReadoutBackend(MeasurementBackend):
             resonator = ReadoutResonator(
                 name=f"{transmon.name}_res",
                 f_r=7.0e9,
-                kappa=2.0 * np.pi * 2.5e6,
-                chi=2.0 * np.pi * 1.2e6,
+                kappa=2.5e6,
+                chi=1.2e6,
             )
 
         if f_ro is None:

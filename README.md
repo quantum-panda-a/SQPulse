@@ -16,7 +16,7 @@
 > **推荐使用内置物理单位常量**：
 > SQPulse 提供了清晰易读的单位常量，可直接导入乘用，彻底避免将纳秒误写为秒：
 > ```python
-> from sqpulse import ns, us, ms, Hz, MHz, GHz
+> from sqpulse import ns, us, ms, Hz, MHz, GHz, mK
 > 
 > # 40 ns 脉冲，平顶过渡 8 ns
 > p = FlatTopPulse(duration=40 * ns, ramp_time=8 * ns)
@@ -50,6 +50,23 @@
    - **$T_1$ 弛豫测量**：施加 $\pi$ 脉冲后扫描延时，通过指数衰减拟合提取 $T_1$ 寿命。
    - **Ramsey 干涉测量**：$\pi/2 - \tau - \pi/2$ 干涉序列，通过阻尼正弦拟合提取 $T_2^*$ 及微波失谐量 $\Delta$。
    - **Qubit / Power 频谱测量**：扫描微波驱动频率自动探测单光子与双光子激发谱，精确提取 $f_{01}$、非谐性 $\alpha$ 与两能级粒子数响应。
+
+---
+
+## 核心组件结构
+
+SQPulse 采用高度模块化的分层架构，各核心组件分工明确，协同构成完整的量子脉冲设计、时序编排、系统建模与实验标定流程：
+
+1. **`models`（量子比特与器件模型）**：
+   - **定义量子比特模型**：提供受驱动多能级超导量子比特 `Transmon`（支持单结与 SQUID 磁通可调、截断能级 $d$、微波及磁通控制引线与 Lindblad 耗散主方程）以及用于色散读出的微波腔模型 `ReadoutResonator`。
+2. **`pulses`（脉冲波形与时频分析）**：
+   - **定义各种波形形状**：内置丰富的高保真波形（包括 `GaussianPulse`, `CosinePulse`, `FlatTopPulse`, `DRAGPulse`, `LorentzianPulse`, `SquarePulse`, `SechPulse` 等），支持任意自定义波形 (`CustomPulse`)、智能自适应采样、快速傅里叶变换（FFT）及频域谱泄露分析。
+3. **`sequence`（多通道脉冲时序编排）**：
+   - **负责波形的编排与调度**：通过 `PulseSequence` 与 `Channel` 统一编排多条物理引线（如 XY 驱动线 `q.xy`、Z 偏置线 `q.z`、RO 读出线 `q.ro`），支持时间对齐与延时插入 (`add`, `delay`, `sync`, `align_center`, `align`)，并可无缝编译为含时哈密顿量。
+4. **`measurement`（测量后端与观测方式）**：
+   - **定义测量的后端和方式**：提供两种物理精度的测量后端——高精度数值求解主方程态演化的投影后端（`ProjectiveBackend` / `Simulator`），以及贴近实际测控硬件、模拟谐振腔传输谱、Langevin 腔光子建立与衰减、数字 IQ 解调与单次聚类判决的色散读出后端（`DispersiveReadoutBackend`）。
+5. **`experiments`（常用量子测量实验）**：
+   - **定义常用的测量实验**：封装标准化的经典量子测控协议与自动化曲线拟合工具，内置 Rabi 振荡实验 (`RabiExperiment`)、$T_1$ 弛豫测量 (`T1Experiment`)、Ramsey 干涉实验 (`RamseyExperiment`) 以及 Qubit 能谱扫描 (`SpectroscopyExperiment`) 等。
 
 ---
 
@@ -154,7 +171,10 @@ $$\mathcal{D}[L]\rho = L \rho L^\dagger - \frac{1}{2} \big\{ L^\dagger L, \rho \
 模型包含的三个主要耗散通道及其坍缩算符（Collapse Operators）$L_k$：
 * **能量弛豫（$T_1$ 衰减）**：
   $$L_{\text{down}} = \sqrt{\frac{1 + n_{\text{th}}}{T_1}} a$$
-* **热平衡激发（$n_{\text{th}}$）**：
+* **热平衡激发（$n_{\text{th}}$）与等效热浴温度（$T$）**：
+  在绝对温度 $T$（$\text{Kelvin}$）的热浴环境下，玻色-爱因斯坦统计分布决定激发态热占有率：
+  $$n_{\text{th}}(f_q, T) = \frac{1}{\exp\left(\frac{h f_q}{k_B T}\right) - 1}$$
+  SQPulse 支持直接传入等效温度（如 `temperature=35 * mK` 或 `"35 mK"`），模型将根据比特共振频率 $f_q$ 自动换算 $n_{\text{th}}$，对应的热激发坍缩算符为：
   $$L_{\text{up}} = \sqrt{\frac{n_{\text{th}}}{T_1}} a^\dagger$$
 * **纯退相位（Pure Dephasing，$T_\phi$）**：
   根据横向弛豫时间 $T_2$ 满足的物理关系 $\frac{1}{T_2} = \frac{1}{2 T_1} + \frac{1}{T_\phi}$，换算得到纯退相位速率：
@@ -196,10 +216,10 @@ plt.show()
 
 ```python
 import matplotlib.pyplot as plt
-from sqpulse import Transmon, ReadoutResonator, PulseSequence, GaussianPulse, FlatTopPulse, Measurement, ns, us, MHz, GHz
+from sqpulse import Transmon, ReadoutResonator, PulseSequence, GaussianPulse, FlatTopPulse, Measurement, ns, us, MHz, GHz, mK
 
-# 1. 定义通用 Transmon (支持结不对称度 d; d=1.0 为单结, d=0.2 为可调 SQUID)
-q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.2, levels=3, t1=25.0 * us, t2=18.0 * us)
+# 1. 定义通用 Transmon (支持结不对称度 d; d=1.0 为单结, d=0.2 为可调 SQUID, 支持直观等效温度 temperature)
+q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.2, levels=3, t1=25.0 * us, t2=18.0 * us, temperature=35 * mK)
 
 # 2. 编排多通道脉冲序列 (包含 XY 驱动、Z 磁通调频与腔读出)
 seq = PulseSequence(name="control_and_readout")
@@ -229,7 +249,7 @@ res_proj.plot_populations()
 plt.show()
 
 # 方式 B：选择真实色散谐振腔读出后端 (微波传输谱、IQ 解调与单次判决)
-cavity = ReadoutResonator(name="r0", f_r=7.0 * GHz, kappa=2.0 * np.pi * 3.0 * MHz, chi=2.0 * np.pi * 1.5 * MHz)
+cavity = ReadoutResonator(name="r0", f_r=7.0 * GHz, kappa=3.0 * MHz, chi=1.5 * MHz)
 res_disp = Measurement.run(q, seq, backend="dispersive", resonator=cavity, shots=1000, snr_db=15.0)
 res_disp.plot_iq_plane()     # 查看 IQ 平面聚类散点图与判决面
 res_disp.plot_trajectories() # 查看腔内光子动力学建立与衰减
@@ -238,7 +258,51 @@ print(f"读出保真度: {res_disp.fidelity:.2%}")
 print("混淆矩阵:\n", res_disp.confusion_matrix)
 ```
 
-### 3. 运行量子实验测量
+### 3. 从 JSON 配置文件快速加载与导出模型 (配置驱动)
+
+SQPulse 支持使用 JSON 文件统一声明芯片上的量子比特与读出腔参数（支持纯数字或 `"5.0 GHz"`、`"25.0 us"` 等人类可读物理量单位字符串），实现硬件标定参数与实验逻辑代码彻底解耦：
+
+```json
+{
+  "transmons": {
+    "q0": {
+      "f_q": "5.0 GHz",
+      "alpha": "-250.0 MHz",
+      "d": 0.25,
+      "levels": 3,
+      "t1": "30.0 us",
+      "t2": "22.0 us",
+      "temperature": "35 mK",
+      "v_phi0": "0.85 V"
+    }
+  },
+  "resonators": {
+    "r0": {
+      "f_r": "7.05 GHz",
+      "kappa": "2.8 MHz",
+      "chi": "1.3 MHz"
+    }
+  }
+}
+```
+
+```python
+from sqpulse import load_models, save_models, Transmon
+
+# 1. 一键加载整颗芯片的所有组件模型
+models = load_models("examples/chip_config.json")
+q0 = models["q0"] # 支持字典式访问或 models.transmons["q0"]
+r0 = models["r0"] # 访问对应谐振腔 models.resonators["r0"]
+
+# 2. 也可以单独加载单组件配置
+# q0 = Transmon.from_json("q0.json")
+
+# 3. 实验标定后可随时导出为字典或写回 JSON 文件
+q0.t1 = 35.0e-6
+save_models(models, "calibrated_chip.json", human_readable=True)
+```
+
+### 4. 运行量子实验测量
 
 ```python
 import matplotlib.pyplot as plt
@@ -246,20 +310,20 @@ from sqpulse import Transmon, GaussianPulse, RabiExperiment, T1Experiment, Ramse
 
 q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, t1=20.0e-6, t2=15.0e-6)
 
-# 3.1 振幅 Rabi 标定 pi 脉冲 AWG 输出幅度 V_0
+# 4.1 振幅 Rabi 标定 pi 脉冲 AWG 输出幅度 V_0
 rabi_res = RabiExperiment.amplitude_rabi(q, pulse_type=GaussianPulse, duration=40e-9)
 print(f"标定得到的 pi 脉冲幅度 V_0: {rabi_res.amp_pi:.3f}")
 rabi_res.plot()
 plt.show()
 
-# 3.2 T1 弛豫测量
+# 4.2 T1 弛豫测量
 pi_pulse = GaussianPulse(duration=40e-9, amp=rabi_res.amp_pi)
 t1_res = T1Experiment.run(q, pi_pulse=pi_pulse)
 print(f"拟合得到的 T1 寿命: {t1_res.t1_fit:.2e} s")
 t1_res.plot()
 plt.show()
 
-# 3.3 Ramsey 干涉实验 (失谐 detuning = 2 MHz = 2e6 Hz)
+# 4.3 Ramsey 干涉实验 (失谐 detuning = 2 MHz = 2e6 Hz)
 pi2_pulse = GaussianPulse(duration=40e-9, amp=rabi_res.amp_pi_half)
 ramsey_res = RamseyExperiment.run(q, pi_half_pulse=pi2_pulse, detuning=2.0e6)
 print(f"拟合测得 T2*: {ramsey_res.t2_star:.2e} s, 失谐: {ramsey_res.fitted_detuning:.2e} Hz")
@@ -267,7 +331,7 @@ ramsey_res.plot()
 plt.show()
 ```
 
-### 4. Z 脉冲改变磁通并扫描 XY 驱动频率测量可调 Transmon 频谱 (Flux-Pulsed Spectroscopy)
+### 5. Z 脉冲改变磁通并扫描 XY 驱动频率测量可调 Transmon 频谱 (Flux-Pulsed Spectroscopy)
 
 在超导量子计算实验中，**磁通可调 Transmon（SQUID Transmon）** 的能级跃迁频率由穿过超导环的磁通量 $\Phi$ 决定。实验中通常将比特停驻在对低频磁通噪声一阶不敏感的对称点（Sweet Spot，$\Phi=0$）。
 
@@ -306,13 +370,12 @@ f_shifted = q.frequency_at_flux(phi_bias) # 理论移动后跃迁频率 ~4.726 G
 # (1) 在 Z 偏置线施加 120 ns 平顶磁通脉冲 (上升/下降沿各 10 ns)
 z_pulse = FlatTopPulse(duration=120 * ns, amp=phi_bias, ramp_time=10 * ns)
 
-# (2) 在 XY 控制线施加 100 ns 弱微波探测脉冲 (延时 10 ns 对齐至 Z 脉冲平顶稳定阶段)
+# (2) 在 XY 控制线施加 100 ns 弱微波探测脉冲
 xy_probe = FlatTopPulse(duration=100 * ns, amp=0.04, ramp_time=5 * ns)
 
 seq = PulseSequence(name="flux_qubit_spec")
-seq.add(q.z, z_pulse)
-seq.delay(q.xy, 10 * ns)
-seq.add(q.xy, xy_probe)
+# 快速中心对齐：Z 磁通脉冲与 XY 探测脉冲中心严格重合，自动计算延时并推进时钟
+seq.align_center((q.z, z_pulse), (q.xy, xy_probe))
 
 # 3. 扫描 XY 驱动载波频率 f_d
 freqs = np.linspace(f_shifted - 40 * MHz, f_shifted + 40 * MHz, 61)
@@ -348,9 +411,10 @@ f_grid = np.linspace(4.4 * GHz, 5.05 * GHz, 66)
 plt.figure(figsize=(7.5, 4))
 for phi in flux_biases:
     s = PulseSequence()
-    s.add(q.z, FlatTopPulse(duration=120 * ns, amp=phi, ramp_time=10 * ns))
-    s.delay(q.xy, 10 * ns)
-    s.add(q.xy, FlatTopPulse(duration=100 * ns, amp=0.04, ramp_time=5 * ns))
+    s.align_center(
+        (q.z, FlatTopPulse(duration=120 * ns, amp=phi, ramp_time=10 * ns)),
+        (q.xy, FlatTopPulse(duration=100 * ns, amp=0.04, ramp_time=5 * ns)),
+    )
     p1_trace = [Simulator.run(q, s, dt=1.5 * ns, f_d=float(fd)).final_population(1) for fd in f_grid]
     f_th = q.frequency_at_flux(phi)
     plt.plot(f_grid / 1e9, p1_trace, lw=2, label=rf"$\Phi = {phi:.2f}\,\Phi_0\ (f_q={f_th/1e9:.3f}\ \mathrm{{GHz}})$")

@@ -1,0 +1,40 @@
+{
+  "chip_name": "Sample-2Q-Superconducting-Chip",
+  "version": "1.0",
+  "transmons": {
+    "q0": {
+      "f_q": "5.0 GHz",
+      "alpha": "-250.0 MHz",
+      "d": 0.25,
+      "flux_offset": 0.0,
+      "levels": 3,
+      "t1": "30.0 us",
+      "t2": "22.0 us",
+      "temperature": "35 mK",
+      "v_phi0": "0.85 V"
+    },
+    "q1": {
+      "f_q": "5.25 GHz",
+      "alpha": "-240.0 MHz",
+      "d": 1.0,
+      "flux_offset": 0.0,
+      "levels": 3,
+      "t1": "45.0 us",
+      "t2": "35.0 us",
+      "temperature": "25 mK",
+      "omega_d": "50.0 MHz"
+    }
+  },
+  "resonators": {
+    "r0": {
+      "f_r": "7.05 GHz",
+      "kappa": "2.8 MHz",
+      "chi": "1.3 MHz"
+    },
+    "r1": {
+      "f_r": "7.30 GHz",
+      "kappa": "2.5 MHz",
+      "chi": "1.1 MHz"
+    }
+  }
+}

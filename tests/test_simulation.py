@@ -33,8 +33,8 @@ def test_resonant_rabi_flip():
 
 
 def test_raw_omega_backward_compatibility():
-    """Setting omega_d=1.0 allows using raw angular frequency in pulse amp."""
-    q_raw = Transmon("q0", f_q=5.0e9, levels=2, omega_d=1.0)
+    """Setting omega_d = 1.0 / (2*pi) Hz makes self.omega_d = 1.0 rad/s."""
+    q_raw = Transmon("q0", f_q=5.0e9, levels=2, omega_d=1.0 / (2.0 * np.pi))
     duration = 20e-9
     omega_raw = np.pi / duration  # raw rad/s
 
@@ -49,7 +49,7 @@ def test_drag_leakage_suppression():
     """Verify that a dimensionless DRAG pulse (drag=1.0) suppresses leakage to |2> by orders of magnitude."""
     from sqpulse.pulses import GaussianPulse, DRAGPulse
 
-    q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, levels=3, omega_d=2.0 * np.pi * 100.0e6)
+    q = Transmon("q0", f_q=5.0e9, alpha=-250.0e6, levels=3, omega_d=100.0e6)
     duration = 10e-9
     amp_pi = 0.966  # Calibrated AWG amplitude for 10ns pi pulse
 
@@ -77,7 +77,7 @@ def test_dynamic_flux_pulse_phase_accumulation():
     from sqpulse import Simulator
 
     # Tunable qubit with asymmetry d=0.2, sweet spot at 5 GHz
-    q = Transmon("q_flux", f_q=5.0e9, alpha=-250e6, d=0.2, levels=2, omega_d=2.0 * np.pi * 50e6)
+    q = Transmon("q_flux", f_q=5.0e9, alpha=-250e6, d=0.2, levels=2, omega_d=50e6)
     v0_pi = np.pi / (q.omega_d * 20e-9)
     p_pi2 = SquarePulse(duration=20e-9, amp=0.5 * v0_pi)
 
@@ -119,11 +119,11 @@ def test_flux_pulsed_spectroscopy():
     phi_bias = 0.15
     f_expected = q.frequency_at_flux(phi_bias)
 
-    # Multi-channel pulse sequence: Z pulse + concurrent XY probe
+    # Multi-channel pulse sequence: Z pulse + concurrent XY probe (center-aligned)
     seq = PulseSequence(name="flux_qubit_spec")
-    seq.add(q.z, FlatTopPulse(duration=120e-9, amp=phi_bias, ramp_time=10e-9))
-    seq.delay(q.xy, 10e-9)
-    seq.add(q.xy, FlatTopPulse(duration=100e-9, amp=0.04, ramp_time=5e-9))
+    z_pulse = FlatTopPulse(duration=120e-9, amp=phi_bias, ramp_time=10e-9)
+    xy_probe = FlatTopPulse(duration=100e-9, amp=0.04, ramp_time=5e-9)
+    seq.align_center((q.z, z_pulse), (q.xy, xy_probe))
 
     # Sweep XY carrier frequencies around shifted frequency
     freqs = np.linspace(f_expected - 40e6, f_expected + 40e6, 21)
@@ -163,6 +163,22 @@ def test_v_phi0_voltage_pulse_simulation():
     assert np.isclose(res_volt.final_population(0), res_flux.final_population(0), atol=1e-6)
     assert np.isclose(res_volt.final_population(1), res_flux.final_population(1), atol=1e-6)
     assert np.isclose(res_volt.final_population(2), res_flux.final_population(2), atol=1e-6)
+
+
+def test_long_delay_center_aligned_solver_step():
+    """Verify solver does not skip drive pulses with large initial delays or center alignments."""
+    from sqpulse.pulses import FlatTopPulse, SquarePulse
+    from sqpulse import Simulator
+
+    q = Transmon("q_long", f_q=5.0e9, levels=2)
+    # Sequence with 500 ns idle delay before a pi pulse (tau=20ns, amp=0.5 -> pi flip)
+    seq = PulseSequence("long_delay")
+    seq.delay(q.xy, 500e-9)
+    seq.add(q.xy, SquarePulse(duration=20e-9, amp=0.5))
+
+    res = Simulator.run(q, seq, dt=1e-9)
+    # Should successfully flip population towards |1>
+    assert res.final_population(1) > 0.8
 
 
 

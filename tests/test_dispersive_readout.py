@@ -18,7 +18,7 @@ from sqpulse.measurement.dispersive.demodulation import demodulate_and_integrate
 
 
 def test_cavity_ringup_and_ringdown():
-    res = ReadoutResonator("r0", f_r=7.0e9, kappa=2.0 * np.pi * 5.0e6, chi=2.0 * np.pi * 1.5e6)
+    res = ReadoutResonator("r0", f_r=7.0e9, kappa=5.0e6, chi=1.5e6)
     p_ro = FlatTopPulse(duration=500e-9, ramp_time=20e-9, amp=1.0)
 
     times, alpha = simulate_cavity_dynamics(res, qubit_state=0, readout_pulse=p_ro, dt=1e-9)
@@ -56,9 +56,9 @@ def test_iq_discriminator():
 
 
 def test_dispersive_readout_backend_ground_and_excited():
-    q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=2.0 * np.pi * 50e6)
+    q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=50e6)
     v0_pi = np.pi / (q.omega_d * 20e-9)
-    res = ReadoutResonator("r0", f_r=7.0e9, kappa=2.0 * np.pi * 3e6, chi=2.0 * np.pi * 1.5e6)
+    res = ReadoutResonator("r0", f_r=7.0e9, kappa=3e6, chi=1.5e6)
 
     # 1. Ground state |0> measurement
     seq_ground = PulseSequence()

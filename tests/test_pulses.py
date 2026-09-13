@@ -386,7 +386,7 @@ def test_phase_modulated_sin_pulse():
     from sqpulse import Transmon
     from sqpulse.experiments import QubitSpectroscopyExperiment
 
-    q = Transmon("q_test", f_q=5.0e9, alpha=-250e6, omega_d=2 * np.pi * 50e6, levels=2)
+    q = Transmon("q_test", f_q=5.0e9, alpha=-250e6, omega_d=50e6, levels=2)
     p_rap = PhaseModulatedSinPulse(duration=400e-9, amp=1.0, mod_freq=50e6)
     res = QubitSpectroscopyExperiment.run(
         transmon=q,

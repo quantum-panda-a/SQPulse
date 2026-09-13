@@ -122,6 +122,91 @@ class PulseSequence:
                 self._channel_clocks[c] = t_max
         return self
 
+    def align(
+        self,
+        *channel_pulse_pairs: Union[Tuple[ChannelLike, Pulse], List[Tuple[ChannelLike, Pulse]]],
+        mode: str = "center",
+    ) -> PulseSequence:
+        """Align multiple pulses across different channels and schedule them concurrently.
+
+        Args:
+            *channel_pulse_pairs: Arbitrary number of (channel, pulse) pairs,
+                or a single list/tuple of (channel, pulse) pairs.
+            mode: Alignment mode:
+                - 'center': Align the temporal midpoints of all pulses.
+                - 'left': Align the start times of all pulses.
+                - 'right': Align the end times of all pulses.
+
+        Returns:
+            self (PulseSequence): For method chaining.
+        """
+        # Handle unpacking if passed as a single list or tuple of pairs
+        if len(channel_pulse_pairs) == 1 and isinstance(channel_pulse_pairs[0], (list, tuple)) and channel_pulse_pairs[0]:
+            first_item = channel_pulse_pairs[0]
+            if isinstance(first_item, (list, tuple)) and len(first_item) > 0 and isinstance(first_item[0], (list, tuple)):
+                pairs = list(first_item)
+            else:
+                pairs = list(channel_pulse_pairs)
+        else:
+            pairs = list(channel_pulse_pairs)
+
+        if not pairs:
+            return self
+
+        align_mode = mode.lower().strip()
+        if align_mode not in ("center", "left", "right"):
+            raise ValueError(
+                f"Invalid alignment mode '{mode}'. Supported modes are: 'center', 'left', 'right'."
+            )
+
+        normalized_pairs = []
+        for pair in pairs:
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                raise ValueError(
+                    f"Each element passed to align must be a (channel, pulse) pair, got: {pair}"
+                )
+            ch_like, pulse = pair
+            ch_name = normalize_channel(ch_like)
+            dur = getattr(pulse, "duration", None)
+            if dur is None or dur < 0:
+                raise ValueError(f"Pulse {pulse} must have a non-negative duration.")
+            normalized_pairs.append((ch_name, pulse, float(dur)))
+
+        # Determine reference base time: maximum clock among participating channels
+        t_base = max(
+            self._channel_clocks.get(ch_name, self._sync_time)
+            for ch_name, _, _ in normalized_pairs
+        )
+        max_duration = max(dur for _, _, dur in normalized_pairs)
+
+        # Schedule pulses according to mode
+        for ch_name, pulse, dur in normalized_pairs:
+            if align_mode == "center":
+                t_start = t_base + (max_duration - dur) / 2.0
+            elif align_mode == "left":
+                t_start = t_base
+            elif align_mode == "right":
+                t_start = t_base + (max_duration - dur)
+            self.add(ch_name, pulse, t_start=t_start)
+
+        # Barrier synchronization: advance clocks of all participating channels to block end
+        t_block_end = t_base + max_duration
+        for ch_name, _, _ in normalized_pairs:
+            self._channel_clocks[ch_name] = t_block_end
+        self._sync_time = max(self._sync_time, t_block_end)
+
+        return self
+
+    def align_center(
+        self,
+        *channel_pulse_pairs: Union[Tuple[ChannelLike, Pulse], List[Tuple[ChannelLike, Pulse]]],
+    ) -> PulseSequence:
+        """Convenience alias for self.align(*channel_pulse_pairs, mode='center').
+
+        Aligns the midpoints of all specified pulses across channels.
+        """
+        return self.align(*channel_pulse_pairs, mode="center")
+
     def sample(
         self,
         dt: Optional[float] = 1e-9,

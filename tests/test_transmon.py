@@ -50,14 +50,21 @@ def test_transmon_collapse_operators():
 
 
 def test_transmon_omega_d():
-    # Default omega_d should be 2*pi * 50 MHz
+    # Default omega_d should be 2*pi * 50 MHz internally, 50 MHz in Hz
     q = Transmon("q0", f_q=5.0e9)
     assert np.isclose(q.omega_d, 2.0 * np.pi * 50.0e6)
+    assert np.isclose(q.omega_d_hz, 50.0e6)
 
-    # Custom omega_d
-    custom_omega = 2.0 * np.pi * 30.0e6
-    q_custom = Transmon("q1", omega_d=custom_omega)
-    assert np.isclose(q_custom.omega_d, custom_omega)
+    # Custom omega_d passed in Hz
+    custom_omega_hz = 30.0e6
+    q_custom = Transmon("q1", omega_d=custom_omega_hz)
+    assert np.isclose(q_custom.omega_d, 2.0 * np.pi * custom_omega_hz)
+    assert np.isclose(q_custom.omega_d_hz, custom_omega_hz)
+
+    # String format
+    q_str = Transmon("q2", omega_d="40 MHz")
+    assert np.isclose(q_str.omega_d, 2.0 * np.pi * 40.0e6)
+    assert np.isclose(q_str.omega_d_hz, 40.0e6)
 
 
 def test_transmon_from_circuit():

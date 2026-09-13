@@ -7,20 +7,23 @@ from sqpulse.models import ReadoutResonator
 
 def test_readout_resonator_properties():
     f_r = 7.0e9
-    kappa = 2.0 * np.pi * 2.5e6
-    chi = 2.0 * np.pi * 1.2e6
+    kappa = 2.5e6
+    chi = 1.2e6
 
     res = ReadoutResonator("r0", f_r=f_r, kappa=kappa, chi=chi)
     assert res.f_r == f_r
+    assert np.isclose(res.kappa, 2.0 * np.pi * kappa)
+    assert np.isclose(res.chi, 2.0 * np.pi * chi)
     assert np.isclose(res.kappa_hz, 2.5e6)
     assert np.isclose(res.chi_hz, 1.2e6)
-    assert np.isclose(res.kappa_ext, 0.5 * kappa)
+    assert np.isclose(res.kappa_ext, 0.5 * (2.0 * np.pi * kappa))
+    assert np.isclose(res.kappa_ext_hz, 0.5 * kappa)
 
 
 def test_readout_resonator_dispersive_shift():
     f_r = 7.0e9
     chi_hz = 1.2e6
-    res = ReadoutResonator("r0", f_r=f_r, chi=2.0 * np.pi * chi_hz)
+    res = ReadoutResonator("r0", f_r=f_r, chi=chi_hz)
 
     f0 = res.effective_frequency(qubit_state=0)
     f1 = res.effective_frequency(qubit_state=1)

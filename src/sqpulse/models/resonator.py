@@ -1,7 +1,9 @@
 """Readout resonator model for circuit QED dispersive measurement in SI units."""
 
 from __future__ import annotations
-from typing import Optional, List, Tuple
+from pathlib import Path
+from typing import Optional, List, Tuple, Union
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -22,33 +24,40 @@ class ReadoutResonator:
     Args:
         name (str): Identifier for this resonator (e.g. 'r0').
         f_r (float): Bare resonance frequency in Hz (e.g. 7.0e9 for 7 GHz).
-        kappa (float): Total cavity decay rate / linewidth in rad/s (default 2*pi * 2.5 MHz).
-        chi (Optional[float]): Dispersive frequency shift in rad/s (default 2*pi * 1.2 MHz).
-            If None and g is provided, calculated from g and transmon detuning.
-        kappa_ext (Optional[float]): External coupling decay rate to feedline in rad/s.
+        kappa (float): Total cavity decay rate / linewidth in Hz (default 2.5 MHz).
+            Automatically multiplied by 2*pi internally.
+        chi (Optional[float]): Dispersive frequency shift in Hz (default 1.2 MHz).
+            Automatically multiplied by 2*pi internally.
+        kappa_ext (Optional[float]): External coupling decay rate to feedline in Hz.
             Defaults to kappa / 2 (critically coupled / symmetrical port).
-        g (Optional[float]): Transmon-resonator capacitive coupling strength in rad/s.
+        g (Optional[float]): Transmon-resonator capacitive coupling strength in Hz.
     """
 
     def __init__(
         self,
         name: str = "r0",
         f_r: float = 7.0e9,
-        kappa: float = 2.0 * np.pi * 2.5e6,
+        kappa: float = 2.5e6,
         chi: Optional[float] = None,
         kappa_ext: Optional[float] = None,
         g: Optional[float] = None,
     ):
+        from ..units import parse_quantity
+
         self.name = name
-        self.f_r = float(f_r)
-        self.kappa = float(kappa)
-        self.kappa_ext = float(kappa_ext) if kappa_ext is not None else 0.5 * self.kappa
-        self.g = float(g) if g is not None else None
+        self.f_r = float(parse_quantity(f_r))
+        self.kappa = 2.0 * np.pi * float(parse_quantity(kappa))
+        self.kappa_ext = (
+            2.0 * np.pi * float(parse_quantity(kappa_ext))
+            if kappa_ext is not None
+            else 0.5 * self.kappa
+        )
+        self.g = 2.0 * np.pi * float(parse_quantity(g)) if g is not None else None
 
         if chi is not None:
-            self.chi = float(chi)
+            self.chi = 2.0 * np.pi * float(parse_quantity(chi))
         else:
-            # Default dispersive shift: 2*pi * 1.2 MHz (rad/s)
+            # Default dispersive shift: 1.2 MHz (rad/s: 2*pi * 1.2 MHz)
             self.chi = 2.0 * np.pi * 1.2e6
 
     @property
@@ -60,6 +69,16 @@ class ReadoutResonator:
     def chi_hz(self) -> float:
         """Dispersive shift in Hz: chi / (2*pi)."""
         return self.chi / (2.0 * np.pi)
+
+    @property
+    def kappa_ext_hz(self) -> Optional[float]:
+        """External coupling decay rate in Hz: kappa_ext / (2*pi)."""
+        return self.kappa_ext / (2.0 * np.pi) if self.kappa_ext is not None else None
+
+    @property
+    def g_hz(self) -> Optional[float]:
+        """Transmon-resonator capacitive coupling strength in Hz: g / (2*pi)."""
+        return self.g / (2.0 * np.pi) if self.g is not None else None
 
     def effective_frequency(self, qubit_state: int = 0) -> float:
         """Return the effective cavity frequency (in Hz) when transmon is in Fock state |n>.
@@ -143,5 +162,117 @@ class ReadoutResonator:
     def __repr__(self) -> str:
         return (
             f"ReadoutResonator('{self.name}', f_r={self.f_r:.3e}Hz, "
-            f"kappa/(2pi)={self.kappa_hz/1e6:.2f}MHz, chi/(2pi)={self.chi_hz/1e6:.2f}MHz)"
+            f"kappa={self.kappa_hz/1e6:.2f}MHz, chi={self.chi_hz/1e6:.2f}MHz)"
         )
+
+    def to_dict(self, human_readable: bool = False) -> dict:
+        """Serialize ReadoutResonator configuration to a dictionary."""
+        return {
+            "name": self.name,
+            "f_r": f"{self.f_r / 1e9:.6g} GHz" if human_readable else self.f_r,
+            "kappa": f"{self.kappa_hz / 1e6:.6g} MHz" if human_readable else self.kappa_hz,
+            "chi": f"{self.chi_hz / 1e6:.6g} MHz" if human_readable else self.chi_hz,
+            "kappa_ext": (
+                f"{self.kappa_ext_hz / 1e6:.6g} MHz"
+                if (human_readable and self.kappa_ext is not None)
+                else self.kappa_ext_hz
+            ),
+            "g": (
+                f"{self.g_hz / 1e6:.6g} MHz"
+                if (human_readable and self.g is not None)
+                else self.g_hz
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ReadoutResonator:
+        """Construct a ReadoutResonator instance from a dictionary.
+
+        Supports:
+            - 'name': str (e.g. 'r0')
+            - 'f_r': bare resonance frequency (number in Hz or string like '7.0 GHz')
+            - 'kappa': cavity decay rate in Hz (number or string like '2.5 MHz')
+            - 'kappa_hz': legacy key for cavity linewidth in Hz
+            - 'chi': dispersive shift in Hz (number or string like '1.2 MHz')
+            - 'chi_hz': legacy key for dispersive shift in Hz
+            - 'kappa_ext': external coupling rate in Hz
+            - 'g': coupling strength in Hz
+        """
+        from ..units import parse_quantity
+
+        name = data.get("name", "r0")
+        f_r = parse_quantity(data.get("f_r", 7.0e9))
+
+        raw_kappa = data.get("kappa", data.get("kappa_hz", None))
+        if raw_kappa is not None:
+            if isinstance(raw_kappa, str) and "rad" in raw_kappa.lower():
+                kappa = parse_quantity(raw_kappa) / (2.0 * np.pi)
+            else:
+                kappa = parse_quantity(raw_kappa)
+        else:
+            kappa = 2.5e6
+
+        raw_chi = data.get("chi", data.get("chi_hz", None))
+        if raw_chi is not None:
+            if isinstance(raw_chi, str) and "rad" in raw_chi.lower():
+                chi = parse_quantity(raw_chi) / (2.0 * np.pi)
+            else:
+                chi = parse_quantity(raw_chi)
+        else:
+            chi = None
+
+        raw_kappa_ext = data.get("kappa_ext", None)
+        if raw_kappa_ext is not None:
+            if isinstance(raw_kappa_ext, str) and "rad" in raw_kappa_ext.lower():
+                kappa_ext = parse_quantity(raw_kappa_ext) / (2.0 * np.pi)
+            else:
+                kappa_ext = parse_quantity(raw_kappa_ext)
+        else:
+            kappa_ext = None
+
+        raw_g = data.get("g", None)
+        if raw_g is not None:
+            if isinstance(raw_g, str) and "rad" in raw_g.lower():
+                g = parse_quantity(raw_g) / (2.0 * np.pi)
+            else:
+                g = parse_quantity(raw_g)
+        else:
+            g = None
+
+        return cls(
+            name=name,
+            f_r=f_r,
+            kappa=kappa,
+            chi=chi,
+            kappa_ext=kappa_ext,
+            g=g,
+        )
+
+    @classmethod
+    def from_json(cls, source: Union[str, Path]) -> ReadoutResonator:
+        """Load a ReadoutResonator model from a JSON file path or a raw JSON string."""
+        p = Path(source) if isinstance(source, (str, Path)) else None
+        if p is not None and p.is_file():
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = json.loads(str(source))
+
+        return cls.from_dict(data)
+
+    def to_json(
+        self,
+        filepath_or_buf: Optional[Union[str, Path]] = None,
+        indent: int = 2,
+        human_readable: bool = False,
+    ) -> Optional[str]:
+        """Serialize ReadoutResonator configuration to a JSON file or JSON string."""
+        data = self.to_dict(human_readable=human_readable)
+        if filepath_or_buf is not None:
+            p = Path(filepath_or_buf)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=indent)
+            return None
+        return json.dumps(data, indent=indent)
+
