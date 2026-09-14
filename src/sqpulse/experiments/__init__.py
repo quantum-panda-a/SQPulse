@@ -8,7 +8,6 @@ from .spectroscopy import (
     QubitSpectroscopyExperiment,
     SpectroscopyExperiment,
     SpectroscopyResult,
-    PowerSpectroscopyResult,
 )
 
 __all__ = [
@@ -26,5 +25,4 @@ __all__ = [
     "QubitSpectroscopyExperiment",
     "SpectroscopyExperiment",
     "SpectroscopyResult",
-    "PowerSpectroscopyResult",
 ]

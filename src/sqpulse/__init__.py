@@ -60,7 +60,6 @@ from .experiments import (
     QubitSpectroscopyExperiment,
     SpectroscopyExperiment,
     SpectroscopyResult,
-    PowerSpectroscopyResult,
 )
 from .units import (
     s,
@@ -156,7 +155,6 @@ __all__ = [
     "QubitSpectroscopyExperiment",
     "SpectroscopyExperiment",
     "SpectroscopyResult",
-    "PowerSpectroscopyResult",
     "s",
     "sec",
     "second",
