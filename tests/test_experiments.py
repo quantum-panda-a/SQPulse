@@ -78,7 +78,7 @@ def test_spectroscopy_weak_drive():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=4)
     # Weak drive: only single-photon excitation f01, P2 ~ 0
     freqs = np.linspace(4.8e9, 5.1e9, 31)
-    res = QubitSpectroscopyExperiment.run(
+    exp = QubitSpectroscopyExperiment.set(
         q,
         freqs=freqs,
         amps=0.04,
@@ -86,6 +86,7 @@ def test_spectroscopy_weak_drive():
         duration=100e-9,
         dt=1e-9,
     )
+    res = exp.run()
 
     assert res.is_2d is False
     # 01 resonance near 5.0 GHz
@@ -101,7 +102,7 @@ def test_spectroscopy_strong_drive_two_photon():
     freqs = np.linspace(4.8e9, 5.1e9, 41)
 
     # Strong drive: amps = 0.5
-    res = QubitSpectroscopyExperiment.run(
+    exp = QubitSpectroscopyExperiment.set(
         q,
         freqs=freqs,
         amps=0.5,
@@ -109,6 +110,7 @@ def test_spectroscopy_strong_drive_two_photon():
         duration=100e-9,
         dt=1e-9,
     )
+    res = exp.run()
 
     assert res.is_2d is False
     # Two-photon peak at 4.875 GHz should be detected with significant P2
@@ -126,7 +128,7 @@ def test_spectroscopy_1d_and_plot():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=4)
     freqs = np.linspace(4.85e9, 5.15e9, 15)
 
-    res = QubitSpectroscopyExperiment.run(
+    exp = QubitSpectroscopyExperiment.set(
         q,
         freqs=freqs,
         amps=0.2,
@@ -134,13 +136,17 @@ def test_spectroscopy_1d_and_plot():
         duration=60e-9,
         dt=1e-9,
     )
+    import matplotlib
+    matplotlib.use("Agg")
+    fig_seq = exp.plot_sequence()
+    assert fig_seq is not None
+
+    res = exp.run()
     assert len(res.freqs) == 15
     assert res.is_2d is False
     assert res.pulse_type == GaussianPulse
 
     # Verify plot executes cleanly
-    import matplotlib
-    matplotlib.use("Agg")
     ax = res.plot()
     assert ax is not None
 
@@ -150,7 +156,7 @@ def test_power_spectroscopy_2d():
     freqs = np.linspace(4.82e9, 5.08e9, 15)
     amps = np.linspace(0.05, 0.5, 5)
 
-    pwr_res = QubitSpectroscopyExperiment.run(
+    exp_pwr = QubitSpectroscopyExperiment.set(
         q,
         freqs=freqs,
         amps=amps,
@@ -158,6 +164,12 @@ def test_power_spectroscopy_2d():
         duration=80e-9,
         dt=1e-9,
     )
+    import matplotlib
+    matplotlib.use("Agg")
+    fig_seq = exp_pwr.plot_sequence()
+    assert fig_seq is not None
+
+    pwr_res = exp_pwr.run()
 
     assert pwr_res.is_2d is True
     assert pwr_res.sweep_param == "amp"
@@ -171,8 +183,6 @@ def test_power_spectroscopy_2d():
     assert np.max(pwr_res.p2_grid[-1, :]) > 0.2
 
     # Verify plot executes cleanly
-    import matplotlib
-    matplotlib.use("Agg")
     ax = pwr_res.plot(observable="p2")
     assert ax is not None
 
@@ -185,7 +195,7 @@ def test_flux_spectroscopy_2d():
     freqs = np.linspace(4.4e9, 5.1e9, 21)
     flux_vals = np.linspace(-0.25, 0.25, 5)
 
-    flux_res = QubitSpectroscopyExperiment.run(
+    exp_flux = QubitSpectroscopyExperiment.set(
         q,
         freqs=freqs,
         amps=0.04,
@@ -193,6 +203,12 @@ def test_flux_spectroscopy_2d():
         duration=80e-9,
         dt=1e-9,
     )
+    import matplotlib
+    matplotlib.use("Agg")
+    fig_seq = exp_flux.plot_sequence()
+    assert fig_seq is not None
+
+    flux_res = exp_flux.run()
 
     assert flux_res.is_2d is True
     assert flux_res.sweep_param == "flux"
@@ -200,8 +216,6 @@ def test_flux_spectroscopy_2d():
     assert flux_res.p1_grid.shape == (5, 21)
 
     # Verify plot executes cleanly with flux theory arc
-    import matplotlib
-    matplotlib.use("Agg")
     ax = flux_res.plot(observable="p1")
     assert ax is not None
 
@@ -213,7 +227,7 @@ def test_spectroscopy_mutually_exclusive_2d():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=3)
     freqs = np.linspace(4.9e9, 5.1e9, 11)
     with pytest.raises(ValueError, match="Cannot sweep both"):
-        QubitSpectroscopyExperiment.run(
+        QubitSpectroscopyExperiment.set(
             q,
             freqs=freqs,
             amps=np.linspace(0.1, 0.5, 3),
@@ -225,10 +239,19 @@ def test_spectroscopy_levels_warning():
     # When levels < 3, warning should be triggered
     q_2lvl = Transmon("q_2lvl", f_q=5.0e9, levels=2)
     with pytest.warns(UserWarning, match="levels=2"):
-        QubitSpectroscopyExperiment.run(
+        QubitSpectroscopyExperiment.set(
             q_2lvl,
             freqs=np.linspace(4.9e9, 5.1e9, 7),
             dt=1e-9,
+        )
+
+
+def test_spectroscopy_deprecated_static_run():
+    q = Transmon("q0", f_q=5.0e9, levels=3)
+    with pytest.raises(RuntimeError, match="static method has been deprecated"):
+        QubitSpectroscopyExperiment.run(
+            q,
+            freqs=np.linspace(4.9e9, 5.1e9, 5),
         )
 
 

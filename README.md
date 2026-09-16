@@ -349,7 +349,7 @@ plt.show()
 
 ### 5. 2D 多维量子能谱实验 (2D Multi-parameter Spectroscopy)
 
-SQPulse 的 `QubitSpectroscopyExperiment.run` 具备全自动多维物理量识别能力。无需切换不同方法或在外部创建脉冲对象，当向二次物理量参数（如 `amps` 或 `flux`）传入一维数组时，实验方法自动升维识别为 2D 联合扫描，其结果对象 `res.plot()` 亦会自动适配该物理量进行专业绘图与物理理论线叠加。
+SQPulse 的 `QubitSpectroscopyExperiment` 采用现代两阶段工作流（`set()` 配置并查看波形 -> `run()` 求解）。无需切换不同方法或在外部创建脉冲对象，当向二次物理量参数（如 `amps` 或 `flux`）传入一维数组时，实验方法自动升维识别为 2D 联合扫描，支持在运行前调用 `exp.plot_sequence()` 直观查看带物理量扫描范围指示箭头的多通道波形时序，其结果对象 `res.plot()` 亦会自动适配该物理量进行专业绘图与物理理论线叠加。
 
 #### 5.1 2D 功率能谱扫描 (Power Spectroscopy: 微波驱动幅度 vs. 频率)
 
@@ -365,11 +365,11 @@ from sqpulse import Transmon, QubitSpectroscopyExperiment, FlatTopPulse, GHz, MH
 # 1. 定义 Transmon (levels=4 可观测双光子跃迁)
 q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, omega_d=50 * MHz, levels=4)
 
-# 2. 2D 功率能谱：amps 传入数组，系统自动升维并执行驱动幅度 vs 频率联合扫描
+# 2. 2D 功率能谱配置：amps 传入数组，系统自动识别为 2D 功率能谱
 freqs_2d = np.linspace(4.8 * GHz, 5.1 * GHz, 71)
 amps_2d = np.linspace(0.04, 0.6, 20)
 
-pwr_res = QubitSpectroscopyExperiment.run(
+exp_pwr = QubitSpectroscopyExperiment.set(
     transmon=q,
     freqs=freqs_2d,
     amps=amps_2d,
@@ -377,7 +377,14 @@ pwr_res = QubitSpectroscopyExperiment.run(
     duration=150 * ns,
 )
 
-# 3. 物理量自适应绘图：自动设置 Y 轴为驱动幅度，并排展示总激发态与双光子支线 (|0> -> |2>)
+# 3. 运行前波形序列可视化：展示驱动幅度扫描范围与脉冲时序
+exp_pwr.plot_sequence()
+plt.show()
+
+# 4. 正式执行实验模拟求解
+pwr_res = exp_pwr.run()
+
+# 5. 物理量自适应绘图：自动设置 Y 轴为驱动幅度，并排展示总激发态与双光子支线 (|0> -> |2>)
 pwr_res.plot(observable="both")
 plt.show()
 ```
@@ -390,9 +397,10 @@ plt.show()
 
 在**磁通可调 Transmon（SQUID Transmon）** 实验中，能级跃迁频率随穿过超导环的磁通量 $\Phi$ 呈周期性变化。实验中通常在 **Z 偏置线 (`q.z`)** 施加纳秒级平顶磁通脉冲调制工作点，并在其平顶期间于 **XY 控制线 (`q.xy`)** 同步施加微波弱探测脉冲。
 
-向 `flux` 传入磁通数组时，`QubitSpectroscopyExperiment.run` 内部固化了该时序逻辑：
+向 `flux` 传入磁通数组时，`QubitSpectroscopyExperiment` 内部固化了该时序逻辑：
 * 在 `transmon.z` 上自动施加时长比 XY 脉冲长 100 ns 的平顶磁通脉冲。
 * **Z 脉冲与 XY 探测脉冲严格中心对齐**（确保探测全程处于平顶稳定区间）。
+* 运行前 `exp.plot_sequence()` 直观展示 Z 偏置范围与 XY 探测中心对齐的时序图。
 * 结果对象 `.plot()` 会在二维色图上**自动叠加理论 SQUID 调谐拱形曲线** $f_{01}(\Phi)$ 与 $f_{02}(\Phi)/2$。
 
 ```python
@@ -403,11 +411,11 @@ from sqpulse import Transmon, QubitSpectroscopyExperiment, FlatTopPulse, GHz, MH
 # 1. 定义磁通可调 SQUID Transmon (结不对称度 d=0.25 < 1.0)
 q_tunable = Transmon("q_flux", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.25, levels=3)
 
-# 2. 2D 磁通能谱：flux 传入数组，自动施加长 100ns 且中心对齐的 Z 脉冲并联合扫频
+# 2. 2D 磁通能谱配置：flux 传入数组，自动施加长 100ns 且中心对齐的 Z 脉冲并联合扫频
 freqs_flux = np.linspace(4.35 * GHz, 5.05 * GHz, 71)
 flux_vals = np.linspace(-0.25, 0.25, 21)
 
-flux_res = QubitSpectroscopyExperiment.run(
+exp_flux = QubitSpectroscopyExperiment.set(
     transmon=q_tunable,
     freqs=freqs_flux,
     amps=0.04,
@@ -416,7 +424,14 @@ flux_res = QubitSpectroscopyExperiment.run(
     duration=100 * ns,
 )
 
-# 3. 物理量自适应绘图：自动识别外部磁通，并在热力图上直接叠加理论调谐拱形曲线 f01(Φ) 与 f02(Φ)/2
+# 3. 运行前波形序列可视化：直观展示 Z 磁通调制范围与 XY 探测脉冲中心对齐
+exp_flux.plot_sequence()
+plt.show()
+
+# 4. 正式执行实验模拟求解
+flux_res = exp_flux.run()
+
+# 5. 物理量自适应绘图：自动识别外部磁通，并在热力图上直接叠加理论调谐拱形曲线 f01(Φ) 与 f02(Φ)/2
 flux_res.plot(observable="both")
 plt.show()
 ```

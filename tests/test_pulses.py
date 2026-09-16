@@ -387,7 +387,7 @@ def test_phase_modulated_sin_pulse():
     from sqpulse.experiments import QubitSpectroscopyExperiment
 
     q = Transmon("q_test", f_q=5.0e9, alpha=-250e6, omega_d=50e6, levels=2)
-    res = QubitSpectroscopyExperiment.run(
+    exp = QubitSpectroscopyExperiment.set(
         transmon=q,
         pulse_type=PhaseModulatedSinPulse,
         duration=400e-9,
@@ -397,6 +397,7 @@ def test_phase_modulated_sin_pulse():
         dt=1e-9,
         fit=False,
     )
+    res = exp.run()
     # At center (5.0 GHz) population should be near 1.0
     p1_center = res.p1_vals[len(res.freqs) // 2]
     assert p1_center > 0.99
