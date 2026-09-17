@@ -36,7 +36,15 @@ from .pulses import (
     spectral_leakage,
     compare_pulses,
 )
-from .models import Transmon, ReadoutResonator, DeviceModels, load_models, save_models
+from .models import (
+    Transmon,
+    ReadoutResonator,
+    CouplingTerm,
+    QuantumSystem,
+    DeviceModels,
+    load_models,
+    save_models,
+)
 from .sequence import PulseSequence, Channel
 from .measurement import (
     Measurement,
@@ -59,6 +67,12 @@ from .experiments import (
     RamseyResult,
     Spectroscopy,
     SpectroscopyResult,
+    TwoQubitGateResult,
+    FluxISWAP,
+    FluxCZ,
+    flux_iswap_sequence,
+    flux_cz_sequence,
+    evaluate_two_qubit_gate,
 )
 from .units import (
     s,
@@ -130,6 +144,8 @@ __all__ = [
     "compare_pulses",
     "Transmon",
     "ReadoutResonator",
+    "CouplingTerm",
+    "QuantumSystem",
     "DeviceModels",
     "load_models",
     "save_models",
@@ -153,6 +169,12 @@ __all__ = [
     "RamseyResult",
     "Spectroscopy",
     "SpectroscopyResult",
+    "TwoQubitGateResult",
+    "FluxISWAP",
+    "FluxCZ",
+    "flux_iswap_sequence",
+    "flux_cz_sequence",
+    "evaluate_two_qubit_gate",
     "s",
     "sec",
     "second",

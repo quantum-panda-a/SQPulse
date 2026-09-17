@@ -13,18 +13,22 @@ class BaseMeasurementResult:
     """Base container for measurement and simulation results in SI units.
 
     Args:
-        transmon (Transmon): Physical model simulated.
+        target (Union[Transmon, QuantumSystem, Any]): Physical model or system simulated.
         sequence (PulseSequence): Pulse sequence executed.
     """
 
     def __init__(
         self,
-        transmon: Transmon,
-        sequence: PulseSequence,
+        target: Any = None,
+        sequence: Optional[PulseSequence] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        transmon: Any = None,
     ):
-        self.transmon = transmon
-        self.sequence = sequence
+        # Support both target and transmon parameter names for backward compatibility
+        resolved_target = target if target is not None else transmon
+        self.target = resolved_target
+        self.transmon = resolved_target
+        self.sequence = sequence or (None)
         self.metadata = metadata or {}
 
 
@@ -40,14 +44,14 @@ class MeasurementBackend(ABC):
     @abstractmethod
     def run(
         self,
-        transmon: Transmon,
+        target: Any,
         sequence: PulseSequence,
         **kwargs,
     ) -> BaseMeasurementResult:
-        """Execute the measurement/simulation on the given qubit and pulse sequence.
+        """Execute the measurement/simulation on the given qubit/system and pulse sequence.
 
         Args:
-            transmon: Transmon qubit model.
+            target: Transmon qubit model or QuantumSystem composite system.
             sequence: PulseSequence to simulate.
             **kwargs: Backend-specific arguments.
 

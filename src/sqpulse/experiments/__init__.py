@@ -8,6 +8,14 @@ from .spectroscopy import (
     Spectroscopy,
     SpectroscopyResult,
 )
+from .two_qubit import (
+    TwoQubitGateResult,
+    FluxISWAP,
+    FluxCZ,
+    flux_iswap_sequence,
+    flux_cz_sequence,
+    evaluate_two_qubit_gate,
+)
 
 __all__ = [
     "fit_sine",
@@ -23,4 +31,10 @@ __all__ = [
     "RamseyResult",
     "Spectroscopy",
     "SpectroscopyResult",
+    "TwoQubitGateResult",
+    "FluxISWAP",
+    "FluxCZ",
+    "flux_iswap_sequence",
+    "flux_cz_sequence",
+    "evaluate_two_qubit_gate",
 ]

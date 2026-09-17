@@ -259,23 +259,92 @@ class PulseSequence:
 
     def to_qutip_evo(
         self,
-        transmon,
+        target: Any,
         dt: Optional[float] = 5e-10,
-        f_d: Optional[float] = None,
+        f_d: Optional[Union[float, Dict[str, float]]] = None,
     ) -> Tuple[np.ndarray, qutip.QobjEvo]:
-        """Compile this sequence for a given Transmon into a QuTiP QobjEvo time-dependent Hamiltonian.
+        """Compile this sequence for a given Transmon or QuantumSystem into a QuTiP QobjEvo time-dependent Hamiltonian.
 
         Args:
-            transmon: Transmon model instance.
+            target: Transmon model instance or QuantumSystem composite system instance.
             dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
-            f_d: Rotating frame drive reference frequency in Hz (defaults to transmon.f_q).
+            f_d: Rotating frame drive reference frequency in Hz.
+                For single Transmon: float (defaults to transmon.frequency_at_flux).
+                For QuantumSystem: None, float, or dict mapping mode name to frequency.
 
         Returns:
             times: 1D array of times in seconds.
             evo: QuTiP QobjEvo time-dependent Hamiltonian.
         """
-        eff_dt = dt if dt is not None else min(self.duration / 400, 5e-10)
-        times, waveforms = self.sample(dt=eff_dt, alpha=transmon.alpha)
+        eff_dt = dt if dt is not None else (min(self.duration / 400, 5e-10) if self.duration > 0 else 5e-10)
+
+        # Branch 1: QuantumSystem (Multi-mode composite system)
+        if hasattr(target, "modes") and hasattr(target, "tensor_with_I"):
+            system = target
+            times, waveforms = self.sample(dt=eff_dt)
+            static_terms = []
+            timedep_terms = []
+
+            # 1. Process drive and detuning for each mode
+            for m in system.modes:
+                # Mode reference frequency
+                if f_d is None:
+                    # Default unified rotating frame: reference frequency of the first mode
+                    m_fd = system.modes[0].frequency_at_flux(system.modes[0].flux_offset)
+                elif isinstance(f_d, (int, float, np.floating)):
+                    m_fd = float(f_d)
+                elif isinstance(f_d, dict):
+                    m_fd = float(f_d.get(m.name, m.frequency_at_flux(m.flux_offset)))
+                else:
+                    raise TypeError(f"Invalid f_d specification: {type(f_d)}")
+
+                # XY microwave drive lines
+                xy_ch_name = normalize_channel(m.xy)
+                if xy_ch_name in waveforms:
+                    drive_wave = waveforms[xy_ch_name]
+                    i_coeffs = drive_wave.real
+                    q_coeffs = drive_wave.imag
+                    h_x_full = system.H_drive_x(m)
+                    h_y_full = system.H_drive_y(m)
+                    if np.any(np.abs(i_coeffs) > 1e-15):
+                        timedep_terms.append([h_x_full, i_coeffs])
+                    if np.any(np.abs(q_coeffs) > 1e-15):
+                        timedep_terms.append([h_y_full, q_coeffs])
+
+                # Z flux bias lines
+                z_ch_name = normalize_channel(m.z)
+                has_flux_pulse = False
+                if z_ch_name in waveforms:
+                    raw_flux_wave = waveforms[z_ch_name].real
+                    flux_wave = m.voltage_to_flux(raw_flux_wave)
+                    if np.any(np.abs(flux_wave) > 1e-14):
+                        has_flux_pulse = True
+
+                if has_flux_pulse and m.d < 1.0:
+                    total_flux = m.flux_offset + flux_wave
+                    freqs_t = np.array([m.frequency_at_flux(phi) for phi in total_flux])
+                    detune_coeffs = 2.0 * np.pi * (freqs_t - m_fd)
+                    # Kerr term
+                    h_kerr_local = np.pi * m.alpha * (m.ad * m.ad * m.a * m.a)
+                    static_terms.append(system.tensor_with_I(m, h_kerr_local))
+                    timedep_terms.append([system.n(m), detune_coeffs])
+                else:
+                    h0_local = m.H0(f_d=m_fd, flux=m.flux_offset)
+                    static_terms.append(system.tensor_with_I(m, h0_local))
+
+            # 2. Add inter-mode coupling terms
+            for c_term in system.coupling_terms:
+                static_terms.append(c_term.to_qobj(system))
+
+            h_static = sum(static_terms) if static_terms else qutip.qzero(system.levels)
+            evo_terms = [h_static] + timedep_terms
+            evo = qutip.QobjEvo(evo_terms, tlist=times)
+            return times, evo
+
+        # Branch 2: Single Transmon (Existing behavior, 100% backward compatible)
+        transmon = target
+        ref_alpha = getattr(transmon, "alpha", None)
+        times, waveforms = self.sample(dt=eff_dt, alpha=ref_alpha)
 
         # 1. Collect XY drive waveform from xy line
         xy_ch_name = normalize_channel(transmon.xy)
@@ -289,7 +358,7 @@ class PulseSequence:
         if z_ch_name in waveforms:
             raw_flux_wave = waveforms[z_ch_name].real
             flux_wave = transmon.voltage_to_flux(raw_flux_wave)
-            has_flux_pulse = True
+            has_flux_pulse = bool(np.any(np.abs(flux_wave) > 1e-14))
         else:
             flux_wave = np.zeros_like(times, dtype=float)
             has_flux_pulse = False

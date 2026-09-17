@@ -19,40 +19,51 @@ class ProjectiveBackend(MeasurementBackend):
 
     def run(
         self,
-        transmon: Transmon,
-        sequence: PulseSequence,
+        target: Any = None,
+        sequence: Optional[PulseSequence] = None,
         init_state: Optional[qutip.Qobj] = None,
         dt: float = 5e-10,
-        f_d: Optional[float] = None,
+        f_d: Optional[Union[float, Dict[str, float]]] = None,
         c_ops: Optional[List[qutip.Qobj]] = None,
         solver_options: Optional[Dict[str, Any]] = None,
         shots: Optional[int] = None,
         seed: Optional[int] = None,
+        transmon: Any = None,
+        include_dissipation: bool = True,
         **kwargs,
     ) -> ProjectiveResult:
-        """Simulate the time evolution of a Transmon driven by a PulseSequence.
+        """Simulate the time evolution of a Transmon or QuantumSystem driven by a PulseSequence.
 
         Args:
-            transmon: Physical Transmon model.
+            target: Physical Transmon model or QuantumSystem composite system.
             sequence: PulseSequence containing the scheduled pulses.
-            init_state: Initial state (Ket or density matrix). Defaults to ground state |0>.
+            init_state: Initial state (Ket or density matrix). Defaults to ground state.
             dt: Simulation time step in seconds (default 5e-10 s = 0.5 ns).
-            f_d: Rotating frame reference frequency in Hz (defaults to transmon resonant frequency).
+            f_d: Rotating frame reference frequency in Hz.
             c_ops: Additional custom Lindblad collapse operators.
             solver_options: Optional dict of options passed to qutip.mesolve.
             shots: Optional number of projective shots to sample.
             seed: Optional seed for random sampling.
+            include_dissipation: Whether to include intrinsic T1/T2 collapse operators from target (default True).
 
         Returns:
             ProjectiveResult containing times, states, and analysis methods.
         """
-        if init_state is None:
-            init_state = transmon.ground_state()
+        resolved_target = target if target is not None else transmon
+        if resolved_target is None:
+            raise ValueError("Must provide either target or transmon to ProjectiveBackend.run")
 
-        times, evo = sequence.to_qutip_evo(transmon, dt=dt, f_d=f_d)
+        seq = sequence or PulseSequence()
+
+        if init_state is None:
+            init_state = resolved_target.ground_state()
+
+        times, evo = seq.to_qutip_evo(resolved_target, dt=dt, f_d=f_d)
 
         # Collect Lindblad collapse operators
-        all_c_ops = list(transmon.c_ops())
+        all_c_ops = []
+        if include_dissipation:
+            all_c_ops.extend(resolved_target.c_ops())
         if c_ops:
             all_c_ops.extend(c_ops)
 
@@ -71,8 +82,8 @@ class ProjectiveBackend(MeasurementBackend):
         return ProjectiveResult(
             times=times,
             states=res.states,
-            transmon=transmon,
-            sequence=sequence,
+            target=resolved_target,
+            sequence=seq,
             shots=shots,
             seed=seed,
         )
