@@ -384,10 +384,10 @@ def test_phase_modulated_sin_pulse():
 
     # Verify rapid adiabatic passage flat-top spectroscopy behaviour
     from sqpulse import Transmon
-    from sqpulse.experiments import QubitSpectroscopyExperiment
+    from sqpulse.experiments import Spectroscopy
 
     q = Transmon("q_test", f_q=5.0e9, alpha=-250e6, omega_d=50e6, levels=2)
-    exp = QubitSpectroscopyExperiment.set(
+    exp = Spectroscopy.set(
         transmon=q,
         pulse_type=PhaseModulatedSinPulse,
         duration=400e-9,

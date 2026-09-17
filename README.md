@@ -66,7 +66,7 @@ SQPulse 采用高度模块化的分层架构，各核心组件分工明确，协
 4. **`measurement`（测量后端与观测方式）**：
    - **定义测量的后端和方式**：提供两种物理精度的测量后端——高精度数值求解主方程态演化的投影后端（`ProjectiveBackend` / `Simulator`），以及贴近实际测控硬件、模拟谐振腔传输谱、Langevin 腔光子建立与衰减、数字 IQ 解调与单次聚类判决的色散读出后端（`DispersiveReadoutBackend`）。
 5. **`experiments`（常用量子测量实验）**：
-   - **定义常用的测量实验**：封装标准化的经典量子测控协议与自动化曲线拟合工具，内置 Rabi 振荡实验 (`RabiExperiment`)、$T_1$ 弛豫测量 (`T1Experiment`)、Ramsey 干涉实验 (`RamseyExperiment`) 以及 Qubit 能谱扫描 (`SpectroscopyExperiment`) 等。
+   - **定义常用的测量实验**：封装标准化的经典量子测控协议与自动化曲线拟合工具，内置 Rabi 振荡实验 (`RabiExperiment`)、$T_1$ 弛豫测量 (`T1Experiment`)、Ramsey 干涉实验 (`RamseyExperiment`) 以及 Qubit 能谱扫描 (`Spectroscopy`) 等。
 
 ---
 
@@ -331,10 +331,10 @@ ramsey_res.plot()
 plt.show()
 
 # 4.4 1D 量子比特频率能谱扫描 (Qubit Spectroscopy)
-from sqpulse import QubitSpectroscopyExperiment, SquarePulse
+from sqpulse import Spectroscopy, SquarePulse
 
 freqs_1d = np.linspace(4.8e9, 5.15e9, 71)
-res_1d = QubitSpectroscopyExperiment.run(
+exp_1d = Spectroscopy.set(
     transmon=q,
     freqs=freqs_1d,
     amps=0.08,
@@ -342,6 +342,7 @@ res_1d = QubitSpectroscopyExperiment.run(
     duration=200e-9,
     fit=True,
 )
+res_1d = exp_1d.run()
 print(f"拟合得到的 f_01 共振频率: {res_1d.f01 / 1e9:.4f} GHz")
 res_1d.plot()
 plt.show()
@@ -349,7 +350,7 @@ plt.show()
 
 ### 5. 2D 多维量子能谱实验 (2D Multi-parameter Spectroscopy)
 
-SQPulse 的 `QubitSpectroscopyExperiment` 采用现代两阶段工作流（`set()` 配置并查看波形 -> `run()` 求解）。无需切换不同方法或在外部创建脉冲对象，当向二次物理量参数（如 `amps` 或 `flux`）传入一维数组时，实验方法自动升维识别为 2D 联合扫描，支持在运行前调用 `exp.plot_sequence()` 直观查看带物理量扫描范围指示箭头的多通道波形时序，其结果对象 `res.plot()` 亦会自动适配该物理量进行专业绘图与物理理论线叠加。
+SQPulse 的 `Spectroscopy` 采用现代两阶段工作流（`set()` 配置并查看波形 -> `run()` 求解）。无需切换不同方法或在外部创建脉冲对象，当向二次物理量参数（如 `amps` 或 `flux`）传入一维数组时，实验方法自动升维识别为 2D 联合扫描，支持在运行前调用 `exp.plot_sequence()` 直观查看带物理量扫描范围指示箭头的多通道波形时序，其结果对象 `res.plot()` 亦会自动适配该物理量进行专业绘图与物理理论线叠加。
 
 #### 5.1 2D 功率能谱扫描 (Power Spectroscopy: 微波驱动幅度 vs. 频率)
 
@@ -360,7 +361,7 @@ SQPulse 的 `QubitSpectroscopyExperiment` 采用现代两阶段工作流（`set(
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from sqpulse import Transmon, QubitSpectroscopyExperiment, FlatTopPulse, GHz, MHz, ns
+from sqpulse import Transmon, Spectroscopy, FlatTopPulse, GHz, MHz, ns
 
 # 1. 定义 Transmon (levels=4 可观测双光子跃迁)
 q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, omega_d=50 * MHz, levels=4)
@@ -369,7 +370,7 @@ q = Transmon("q0", f_q=5.0 * GHz, alpha=-250.0 * MHz, omega_d=50 * MHz, levels=4
 freqs_2d = np.linspace(4.8 * GHz, 5.1 * GHz, 71)
 amps_2d = np.linspace(0.04, 0.6, 20)
 
-exp_pwr = QubitSpectroscopyExperiment.set(
+exp_pwr = Spectroscopy.set(
     transmon=q,
     freqs=freqs_2d,
     amps=amps_2d,
@@ -397,7 +398,7 @@ plt.show()
 
 在**磁通可调 Transmon（SQUID Transmon）** 实验中，能级跃迁频率随穿过超导环的磁通量 $\Phi$ 呈周期性变化。实验中通常在 **Z 偏置线 (`q.z`)** 施加纳秒级平顶磁通脉冲调制工作点，并在其平顶期间于 **XY 控制线 (`q.xy`)** 同步施加微波弱探测脉冲。
 
-向 `flux` 传入磁通数组时，`QubitSpectroscopyExperiment` 内部固化了该时序逻辑：
+向 `flux` 传入磁通数组时，`Spectroscopy` 内部固化了该时序逻辑：
 * 在 `transmon.z` 上自动施加时长比 XY 脉冲长 100 ns 的平顶磁通脉冲。
 * **Z 脉冲与 XY 探测脉冲严格中心对齐**（确保探测全程处于平顶稳定区间）。
 * 运行前 `exp.plot_sequence()` 直观展示 Z 偏置范围与 XY 探测中心对齐的时序图。
@@ -406,7 +407,7 @@ plt.show()
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from sqpulse import Transmon, QubitSpectroscopyExperiment, FlatTopPulse, GHz, MHz, ns
+from sqpulse import Transmon, Spectroscopy, FlatTopPulse, GHz, MHz, ns
 
 # 1. 定义磁通可调 SQUID Transmon (结不对称度 d=0.25 < 1.0)
 q_tunable = Transmon("q_flux", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.25, levels=3)
@@ -415,7 +416,7 @@ q_tunable = Transmon("q_flux", f_q=5.0 * GHz, alpha=-250.0 * MHz, d=0.25, levels
 freqs_flux = np.linspace(4.35 * GHz, 5.05 * GHz, 71)
 flux_vals = np.linspace(-0.25, 0.25, 21)
 
-exp_flux = QubitSpectroscopyExperiment.set(
+exp_flux = Spectroscopy.set(
     transmon=q_tunable,
     freqs=freqs_flux,
     amps=0.04,

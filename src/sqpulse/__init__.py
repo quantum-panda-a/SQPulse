@@ -57,8 +57,7 @@ from .experiments import (
     T1Result,
     RamseyExperiment,
     RamseyResult,
-    QubitSpectroscopyExperiment,
-    SpectroscopyExperiment,
+    Spectroscopy,
     SpectroscopyResult,
 )
 from .units import (
@@ -152,8 +151,7 @@ __all__ = [
     "T1Result",
     "RamseyExperiment",
     "RamseyResult",
-    "QubitSpectroscopyExperiment",
-    "SpectroscopyExperiment",
+    "Spectroscopy",
     "SpectroscopyResult",
     "s",
     "sec",

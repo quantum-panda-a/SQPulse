@@ -2,13 +2,12 @@
 
 import numpy as np
 import pytest
-from sqpulse import Transmon, PulseSequence, SquarePulse, GaussianPulse, Simulator
+from sqpulse import Transmon, PulseSequence, SquarePulse, GaussianPulse, FlatTopPulse, Simulator
 from sqpulse.experiments import (
     RabiExperiment,
     T1Experiment,
     RamseyExperiment,
-    QubitSpectroscopyExperiment,
-    SpectroscopyExperiment,
+    Spectroscopy,
 )
 
 
@@ -78,7 +77,7 @@ def test_spectroscopy_weak_drive():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=4)
     # Weak drive: only single-photon excitation f01, P2 ~ 0
     freqs = np.linspace(4.8e9, 5.1e9, 31)
-    exp = QubitSpectroscopyExperiment.set(
+    exp = Spectroscopy.set(
         q,
         freqs=freqs,
         amps=0.04,
@@ -102,7 +101,7 @@ def test_spectroscopy_strong_drive_two_photon():
     freqs = np.linspace(4.8e9, 5.1e9, 41)
 
     # Strong drive: amps = 0.5
-    exp = QubitSpectroscopyExperiment.set(
+    exp = Spectroscopy.set(
         q,
         freqs=freqs,
         amps=0.5,
@@ -128,7 +127,7 @@ def test_spectroscopy_1d_and_plot():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=4)
     freqs = np.linspace(4.85e9, 5.15e9, 15)
 
-    exp = QubitSpectroscopyExperiment.set(
+    exp = Spectroscopy.set(
         q,
         freqs=freqs,
         amps=0.2,
@@ -156,7 +155,7 @@ def test_power_spectroscopy_2d():
     freqs = np.linspace(4.82e9, 5.08e9, 15)
     amps = np.linspace(0.05, 0.5, 5)
 
-    exp_pwr = QubitSpectroscopyExperiment.set(
+    exp_pwr = Spectroscopy.set(
         q,
         freqs=freqs,
         amps=amps,
@@ -195,7 +194,7 @@ def test_flux_spectroscopy_2d():
     freqs = np.linspace(4.4e9, 5.1e9, 21)
     flux_vals = np.linspace(-0.25, 0.25, 5)
 
-    exp_flux = QubitSpectroscopyExperiment.set(
+    exp_flux = Spectroscopy.set(
         q,
         freqs=freqs,
         amps=0.04,
@@ -227,7 +226,7 @@ def test_spectroscopy_mutually_exclusive_2d():
     q = Transmon("q0", f_q=5.0e9, alpha=-250e6, levels=3)
     freqs = np.linspace(4.9e9, 5.1e9, 11)
     with pytest.raises(ValueError, match="Cannot sweep both"):
-        QubitSpectroscopyExperiment.set(
+        Spectroscopy.set(
             q,
             freqs=freqs,
             amps=np.linspace(0.1, 0.5, 3),
@@ -239,7 +238,7 @@ def test_spectroscopy_levels_warning():
     # When levels < 3, warning should be triggered
     q_2lvl = Transmon("q_2lvl", f_q=5.0e9, levels=2)
     with pytest.warns(UserWarning, match="levels=2"):
-        QubitSpectroscopyExperiment.set(
+        Spectroscopy.set(
             q_2lvl,
             freqs=np.linspace(4.9e9, 5.1e9, 7),
             dt=1e-9,
@@ -249,7 +248,7 @@ def test_spectroscopy_levels_warning():
 def test_spectroscopy_deprecated_static_run():
     q = Transmon("q0", f_q=5.0e9, levels=3)
     with pytest.raises(RuntimeError, match="static method has been deprecated"):
-        QubitSpectroscopyExperiment.run(
+        Spectroscopy.run(
             q,
             freqs=np.linspace(4.9e9, 5.1e9, 5),
         )
@@ -273,3 +272,119 @@ def test_rabi_with_dispersive_backend():
     assert np.max(rabi_res.p1_vals) > 0.8
 
 
+def test_spectroscopy_2d_duration_sweep():
+    q = Transmon("q_dur", f_q=5.0e9, alpha=-250e6, levels=4)
+    freqs = np.linspace(4.85e9, 5.15e9, 11)
+    durations = np.linspace(40e-9, 120e-9, 4)
+
+    exp = Spectroscopy.set(
+        q,
+        freqs=freqs,
+        amps=0.1,
+        pulse_type=SquarePulse,
+        duration=durations,
+        dt=1e-9,
+    )
+    import matplotlib
+    matplotlib.use("Agg")
+    fig_seq = exp.plot_sequence()
+    assert fig_seq is not None
+
+    res = exp.run()
+    assert res.is_2d is True
+    assert res.sweep_param == "duration"
+    assert len(res.durations) == 4
+    assert np.allclose(res.durations, durations)
+    assert res.p_exc_grid.shape == (4, 11)
+    assert res.p1_grid.shape == (4, 11)
+    assert res.p2_grid.shape == (4, 11)
+
+    ax = res.plot(observable="p_exc")
+    assert ax is not None
+
+
+def test_spectroscopy_2d_drag_sweep():
+    q = Transmon("q_drag", f_q=5.0e9, alpha=-250e6, levels=4)
+    freqs = np.linspace(4.85e9, 5.15e9, 9)
+    drag_vals = np.linspace(0.0, 1.0, 3)
+
+    exp = Spectroscopy.set(
+        q,
+        freqs=freqs,
+        amps=0.15,
+        pulse_type=GaussianPulse,
+        duration=50e-9,
+        drag=drag_vals,
+        dt=1e-9,
+    )
+    import matplotlib
+    matplotlib.use("Agg")
+    fig_seq = exp.plot_sequence()
+    assert fig_seq is not None
+
+    res = exp.run()
+    assert res.is_2d is True
+    assert res.sweep_param == "drag"
+    assert res.p_exc_grid.shape == (3, 9)
+
+    ax = res.plot(observable="p1")
+    assert ax is not None
+
+
+def test_spectroscopy_2d_ramp_time_sweep():
+    q = Transmon("q_ramp", f_q=5.0e9, alpha=-250e6, levels=3)
+    freqs = np.linspace(4.9e9, 5.1e9, 9)
+    ramp_times = np.linspace(5e-9, 15e-9, 3)
+
+    exp = Spectroscopy.set(
+        q,
+        freqs=freqs,
+        amps=0.1,
+        pulse_type=FlatTopPulse,
+        duration=60e-9,
+        ramp_time=ramp_times,
+        dt=1e-9,
+    )
+    import matplotlib
+    matplotlib.use("Agg")
+    fig_seq = exp.plot_sequence()
+    assert fig_seq is not None
+
+    res = exp.run()
+    assert res.is_2d is True
+    assert res.sweep_param == "ramp_time"
+    assert res.p_exc_grid.shape == (3, 9)
+
+
+def test_spectroscopy_explicit_sweep_param_and_validation():
+    q = Transmon("q_val", f_q=5.0e9, alpha=-250e6, levels=3)
+    freqs = np.linspace(4.9e9, 5.1e9, 7)
+
+    # Explicit valid sweep_param
+    exp = Spectroscopy.set(
+        q,
+        freqs=freqs,
+        amps=0.1,
+        duration=np.linspace(40e-9, 80e-9, 3),
+        sweep_param="duration",
+    )
+    assert exp.is_2d is True
+    assert exp.sweep_param == "duration"
+
+    # Non-existent sweep_param
+    with pytest.raises(ValueError, match="no such parameter was provided"):
+        Spectroscopy.set(
+            q,
+            freqs=freqs,
+            amps=0.1,
+            sweep_param="non_existent_param",
+        )
+
+    # Conflicting multiple swept params
+    with pytest.raises(ValueError, match="Cannot sweep both or multiple"):
+        Spectroscopy.set(
+            q,
+            freqs=freqs,
+            amps=np.linspace(0.1, 0.5, 3),
+            duration=np.linspace(40e-9, 80e-9, 3),
+        )

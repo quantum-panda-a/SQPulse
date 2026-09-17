@@ -5,8 +5,7 @@ from .rabi import RabiExperiment, RabiResult
 from .t1 import T1Experiment, T1Result
 from .ramsey import RamseyExperiment, RamseyResult
 from .spectroscopy import (
-    QubitSpectroscopyExperiment,
-    SpectroscopyExperiment,
+    Spectroscopy,
     SpectroscopyResult,
 )
 
@@ -22,7 +21,6 @@ __all__ = [
     "T1Result",
     "RamseyExperiment",
     "RamseyResult",
-    "QubitSpectroscopyExperiment",
-    "SpectroscopyExperiment",
+    "Spectroscopy",
     "SpectroscopyResult",
 ]

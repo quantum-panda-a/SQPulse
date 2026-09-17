@@ -34,6 +34,40 @@ def _to_single_value(val: Any, default: Optional[float] = None) -> Optional[floa
     return float(val)
 
 
+SWEEP_PARAM_REGISTRY: Dict[str, Dict[str, Any]] = {
+    "amp": {"label": "Drive Amplitude V₀", "unit": "AWG V₀", "scale": 1.0, "type": "amplitude"},
+    "amps": {"label": "Drive Amplitude V₀", "unit": "AWG V₀", "scale": 1.0, "type": "amplitude"},
+    "flux": {"label": "External Flux Bias Φ", "unit": "Φ₀", "scale": 1.0, "type": "flux"},
+    "duration": {"label": "Probe Duration", "unit": "ns", "scale": 1e-9, "type": "time"},
+    "length": {"label": "Probe Duration", "unit": "ns", "scale": 1e-9, "type": "time"},
+    "ramp_time": {"label": "FlatTop Ramp Time", "unit": "ns", "scale": 1e-9, "type": "time"},
+    "sigma": {"label": "Gaussian Sigma (σ)", "unit": "ns", "scale": 1e-9, "type": "time"},
+    "chop": {"label": "Chop Ratio", "unit": "a.u.", "scale": 1.0, "type": "shape"},
+    "drag": {"label": "DRAG Beta (β)", "unit": "a.u.", "scale": 1.0, "type": "shape"},
+    "alpha": {"label": "Anharmonicity α", "unit": "MHz", "scale": 1e6, "type": "frequency"},
+    "detune": {"label": "Detuning Δ", "unit": "MHz", "scale": 1e6, "type": "frequency"},
+    "phase": {"label": "Carrier Phase", "unit": "rad", "scale": 1.0, "type": "shape"},
+    "mod_freq": {"label": "Modulation Frequency", "unit": "MHz", "scale": 1e6, "type": "frequency"},
+    "omega_0": {"label": "Modulation Frequency (ω₀)", "unit": "MHz", "scale": 1e6, "type": "frequency"},
+}
+
+
+def _get_param_meta(param_name: str) -> Dict[str, Any]:
+    """Retrieve metadata for a swept parameter, or generate fallback defaults."""
+    if param_name in SWEEP_PARAM_REGISTRY:
+        return SWEEP_PARAM_REGISTRY[param_name]
+    p_lower = param_name.lower()
+    if any(t in p_lower for t in ("time", "dur", "tau", "delay", "sigma", "width")):
+        return {"label": param_name, "unit": "ns", "scale": 1e-9, "type": "time"}
+    if any(f in p_lower for f in ("freq", "detune", "omega", "bandwidth")):
+        return {"label": param_name, "unit": "MHz", "scale": 1e6, "type": "frequency"}
+    if "amp" in p_lower or "volt" in p_lower:
+        return {"label": param_name, "unit": "AWG V₀", "scale": 1.0, "type": "amplitude"}
+    if "flux" in p_lower or "phi" in p_lower:
+        return {"label": param_name, "unit": "Φ₀", "scale": 1.0, "type": "flux"}
+    return {"label": param_name, "unit": "a.u.", "scale": 1.0, "type": "shape"}
+
+
 class SpectroscopyResult:
     """Unified container for 1D and 2D Qubit Spectroscopy experiment results in SI units."""
 
@@ -86,8 +120,8 @@ class SpectroscopyResult:
 
     @property
     def amps(self) -> np.ndarray:
-        """Swept drive amplitudes if sweep_param is 'amp', or array with single amp."""
-        if self.sweep_param == "amp":
+        """Swept drive amplitudes if sweep_param is 'amp' or 'amps', or array with single amp."""
+        if self.sweep_param in ("amp", "amps"):
             return self.sweep_vals
         return np.array([self.amp]) if self.amp is not None else np.array([])
 
@@ -97,6 +131,13 @@ class SpectroscopyResult:
         if self.sweep_param == "flux":
             return self.sweep_vals
         return np.array([self.flux]) if self.flux is not None else np.array([])
+
+    @property
+    def durations(self) -> np.ndarray:
+        """Swept pulse durations if sweep_param is 'duration' or 'length', or array with single duration."""
+        if self.sweep_param in ("duration", "length"):
+            return self.sweep_vals
+        return np.array([self.duration]) if self.duration is not None else np.array([])
 
     @property
     def f01(self) -> float:
@@ -275,72 +316,69 @@ class SpectroscopyResult:
         # -------------------------------------------------------------
         # 2D Multi-parameter Spectroscopy Plotting
         # -------------------------------------------------------------
-        if self.sweep_param == "amp":
-            y_vals = self.sweep_vals
-            y_label = "Drive Amplitude V_0 (Normalized AWG)"
+        meta = _get_param_meta(str(self.sweep_param or ""))
+        scale_y = meta["scale"]
+        unit_y = meta["unit"]
+        label_y = meta["label"]
+        y_vals = self.sweep_vals / scale_y
+        y_label = f"{label_y} ({unit_y})" if unit_y and unit_y != "a.u." else label_y
+
+        if self.sweep_param in ("amp", "amps"):
             title_prefix = "Power Spectroscopy"
-
-            def _draw_theory_2d(target_ax):
-                if show_theory_lines:
-                    eff_f01 = self.transmon.frequency_at_flux(self.flux)
-                    f01_th = eff_f01 / scale
-                    target_ax.axvline(
-                        f01_th,
-                        color="white",
-                        ls="--",
-                        lw=1.5,
-                        alpha=0.85,
-                        label=f"f_01 ({f01_th:.4f} {unit})",
-                    )
-                    if self.transmon.levels >= 3:
-                        f02_half_th = (eff_f01 + self.transmon.alpha / 2.0) / scale
-                        target_ax.axvline(
-                            f02_half_th,
-                            color="red",
-                            ls="--",
-                            lw=1.5,
-                            alpha=0.85,
-                            label=f"f_02/2 ({f02_half_th:.4f} {unit})",
-                        )
-                    target_ax.legend(loc="upper right", framealpha=0.8, fontsize=9)
-
         elif self.sweep_param == "flux":
-            y_vals = self.sweep_vals
-            y_label = "External Flux Bias Φ / Φ₀"
             title_prefix = "Flux Spectroscopy"
+        else:
+            title_prefix = f"2D Spectroscopy ({label_y})"
 
-            def _draw_theory_2d(target_ax):
-                if show_theory_lines:
-                    phi_dense = np.linspace(np.min(self.sweep_vals), np.max(self.sweep_vals), 200)
-                    f01_dense = np.array([self.transmon.frequency_at_flux(phi) for phi in phi_dense]) / scale
+        def _draw_theory_2d(target_ax):
+            if not show_theory_lines:
+                return
+            if self.sweep_param == "flux":
+                phi_dense = np.linspace(np.min(self.sweep_vals), np.max(self.sweep_vals), 200)
+                f01_dense = np.array([self.transmon.frequency_at_flux(phi) for phi in phi_dense]) / scale
+                target_ax.plot(
+                    f01_dense,
+                    phi_dense / scale_y,
+                    color="white",
+                    ls="--",
+                    lw=1.8,
+                    alpha=0.9,
+                    label="f_01(Φ) Theory",
+                )
+                if self.transmon.levels >= 3:
+                    f02_dense = (f01_dense * scale + self.transmon.alpha / 2.0) / scale
                     target_ax.plot(
-                        f01_dense,
-                        phi_dense,
-                        color="white",
+                        f02_dense,
+                        phi_dense / scale_y,
+                        color="red",
                         ls="--",
                         lw=1.8,
                         alpha=0.9,
-                        label="f_01(Φ) Theory",
+                        label="f_02(Φ)/2 Theory",
                     )
-                    if self.transmon.levels >= 3:
-                        f02_dense = (f01_dense * scale + self.transmon.alpha / 2.0) / scale
-                        target_ax.plot(
-                            f02_dense,
-                            phi_dense,
-                            color="red",
-                            ls="--",
-                            lw=1.8,
-                            alpha=0.9,
-                            label="f_02(Φ)/2 Theory",
-                        )
-                    target_ax.legend(loc="best", framealpha=0.8, fontsize=9)
-        else:
-            y_vals = self.sweep_vals
-            y_label = str(self.sweep_param)
-            title_prefix = f"2D Spectroscopy ({self.sweep_param})"
-
-            def _draw_theory_2d(target_ax):
-                pass
+                target_ax.legend(loc="best", framealpha=0.8, fontsize=9)
+            else:
+                eff_f01 = self.transmon.frequency_at_flux(self.flux)
+                f01_th = eff_f01 / scale
+                target_ax.axvline(
+                    f01_th,
+                    color="white",
+                    ls="--",
+                    lw=1.5,
+                    alpha=0.85,
+                    label=f"f_01 ({f01_th:.4f} {unit})",
+                )
+                if self.transmon.levels >= 3:
+                    f02_half_th = (eff_f01 + self.transmon.alpha / 2.0) / scale
+                    target_ax.axvline(
+                        f02_half_th,
+                        color="red",
+                        ls="--",
+                        lw=1.5,
+                        alpha=0.85,
+                        label=f"f_02/2 ({f02_half_th:.4f} {unit})",
+                    )
+                target_ax.legend(loc="upper right", framealpha=0.8, fontsize=9)
 
         # Check subplots layout
         if observable in ("both", "all") and self.transmon.levels >= 3:
@@ -412,34 +450,37 @@ class SpectroscopyResult:
         return ax
 
 
-class _QubitSpectroscopyRunMethod:
-    """Descriptor to enforce deprecation of static QubitSpectroscopyExperiment.run()."""
+class _SpectroscopyRunMethod:
+    """Descriptor to enforce deprecation of static Spectroscopy.run()."""
 
     def __get__(self, instance, owner=None):
         if instance is None:
             def deprecated_static_run(*args, **kwargs):
                 raise RuntimeError(
-                    "QubitSpectroscopyExperiment.run() as a static method has been deprecated. "
+                    "Spectroscopy.run() as a static method has been deprecated. "
                     "Please use the two-step workflow: "
-                    "exp = QubitSpectroscopyExperiment.set(...); exp.plot_sequence(); res = exp.run()"
+                    "exp = Spectroscopy.set(...); exp.plot_sequence(); res = exp.run()"
                 )
             deprecated_static_run.__doc__ = (
-                "Deprecated static run method. Use QubitSpectroscopyExperiment.set(...); exp.run() instead."
+                "Deprecated static run method. Use Spectroscopy.set(...); exp.run() instead."
             )
             return deprecated_static_run
         return instance._run_instance
 
 
-class QubitSpectroscopyExperiment:
+class Spectroscopy:
     """Configures and executes Qubit Spectroscopy experiments (1D Frequency Sweep and 2D Multi-parameter Spectroscopy).
 
+    Supports 1D Frequency sweeps as well as arbitrary 2D parameter sweeps (e.g. freqs vs. amps, flux,
+    duration, ramp_time, drag, mod_freq, sigma, or any valid pulse parameter).
+
     Workflow:
-        exp = QubitSpectroscopyExperiment.set(transmon, freqs, ...)
+        exp = Spectroscopy.set(transmon, freqs, ...)
         exp.plot_sequence()  # Inspect pulse sequence before running
         res = exp.run()      # Run simulation and retrieve SpectroscopyResult
     """
 
-    run = _QubitSpectroscopyRunMethod()
+    run = _SpectroscopyRunMethod()
 
     def __init__(
         self,
@@ -448,9 +489,10 @@ class QubitSpectroscopyExperiment:
         amps: Union[float, Sequence[float], np.ndarray] = 0.1,
         flux: Optional[Union[float, Sequence[float], np.ndarray]] = None,
         pulse_type: Type[Pulse] = SquarePulse,
-        duration: float = 200e-9,
+        duration: Union[float, Sequence[float], np.ndarray] = 200e-9,
         dt: float = 1e-9,
         fit: bool = True,
+        sweep_param: Optional[str] = None,
         **pulse_kwargs,
     ):
         if transmon.levels < 3:
@@ -466,38 +508,64 @@ class QubitSpectroscopyExperiment:
         if freqs_arr.ndim != 1 or len(freqs_arr) == 0:
             raise ValueError("freqs must be a non-empty 1D array of frequencies in Hz.")
 
-        amps_multi = _is_multi_value(amps)
-        flux_multi = _is_multi_value(flux)
+        # Standardize candidates
+        candidates: Dict[str, Any] = {
+            "amp": amps,
+            "flux": flux,
+            "duration": duration,
+        }
+        candidates.update(pulse_kwargs)
 
-        if amps_multi and flux_multi:
+        multi_params = [k for k, v in candidates.items() if _is_multi_value(v)]
+
+        if sweep_param is not None:
+            norm_param = "amp" if sweep_param == "amps" else sweep_param
+            if norm_param not in candidates:
+                raise ValueError(
+                    f"Explicit sweep_param '{sweep_param}' was specified, but no such parameter was provided."
+                )
+            selected_param = norm_param
+            param_vals = np.asarray(candidates[selected_param], dtype=float)
+            is_2d = len(param_vals) > 1
+        elif len(multi_params) > 1:
             raise ValueError(
-                "Cannot sweep both 'amps' and 'flux' simultaneously. "
-                "QubitSpectroscopyExperiment supports 1D (frequency) or 2D (frequency vs. amps or frequency vs. flux)."
+                f"Cannot sweep both or multiple secondary parameters simultaneously: {multi_params}. "
+                f"Spectroscopy supports 1D frequency sweep or 2D (frequency vs. 1 parameter)."
             )
+        elif len(multi_params) == 1:
+            is_2d = True
+            selected_param = multi_params[0]
+            param_vals = np.asarray(candidates[selected_param], dtype=float)
+        else:
+            is_2d = False
+            selected_param = None
+            param_vals = np.array([])
 
         self.transmon = transmon
         self.freqs = freqs_arr
-        self.amps = amps
-        self.flux = flux
         self.pulse_type = pulse_type
-        self.duration = float(duration)
         self.dt = float(dt)
         self.fit = bool(fit)
+        self.is_2d = is_2d
+        self.sweep_param = selected_param
+        self.sweep_vals = param_vals
+
+        # Base scalar values
+        self.single_amp = _to_single_value(amps, default=0.1)
+        self.single_flux = _to_single_value(flux, default=None)
+        self.single_duration = _to_single_value(duration, default=200e-9)
+        self.single_kwargs: Dict[str, Any] = {}
+        for k, v in pulse_kwargs.items():
+            if k == selected_param:
+                self.single_kwargs[k] = v
+            else:
+                self.single_kwargs[k] = _to_single_value(v, default=v) if _is_multi_value(v) is False else v
+
+        # Preserved attributes
+        self.amps = amps
+        self.flux = flux
+        self.duration = duration
         self.pulse_kwargs = pulse_kwargs
-
-        self.amps_multi = amps_multi
-        self.flux_multi = flux_multi
-        self.is_2d = amps_multi or flux_multi
-
-        if amps_multi:
-            self.sweep_param = "amp"
-            self.sweep_vals = np.asarray(amps, dtype=float)
-        elif flux_multi:
-            self.sweep_param = "flux"
-            self.sweep_vals = np.asarray(flux, dtype=float)
-        else:
-            self.sweep_param = None
-            self.sweep_vals = np.array([])
 
     @classmethod
     def set(
@@ -507,12 +575,13 @@ class QubitSpectroscopyExperiment:
         amps: Union[float, Sequence[float], np.ndarray] = 0.1,
         flux: Optional[Union[float, Sequence[float], np.ndarray]] = None,
         pulse_type: Type[Pulse] = SquarePulse,
-        duration: float = 200e-9,
+        duration: Union[float, Sequence[float], np.ndarray] = 200e-9,
         dt: float = 1e-9,
         fit: bool = True,
+        sweep_param: Optional[str] = None,
         **pulse_kwargs,
-    ) -> QubitSpectroscopyExperiment:
-        """Initialize and configure a QubitSpectroscopyExperiment instance."""
+    ) -> Spectroscopy:
+        """Initialize and configure a Spectroscopy instance."""
         return cls(
             transmon=transmon,
             freqs=freqs,
@@ -522,8 +591,19 @@ class QubitSpectroscopyExperiment:
             duration=duration,
             dt=dt,
             fit=fit,
+            sweep_param=sweep_param,
             **pulse_kwargs,
         )
+
+    def _get_step_params(self, val: float) -> Tuple[float, Optional[float], float, Dict[str, Any]]:
+        """Return (amp, flux, duration, kwargs) for a given sweep value."""
+        step_amp = float(val) if self.sweep_param in ("amps", "amp") else self.single_amp
+        step_flux = float(val) if self.sweep_param == "flux" else self.single_flux
+        step_duration = float(val) if self.sweep_param in ("duration", "length") else self.single_duration
+        step_kwargs = dict(self.single_kwargs)
+        if self.sweep_param in step_kwargs:
+            step_kwargs[self.sweep_param] = float(val)
+        return step_amp, step_flux, step_duration, step_kwargs
 
     @staticmethod
     def _build_sequence(
@@ -559,108 +639,92 @@ class QubitSpectroscopyExperiment:
         figsize: Optional[Tuple[float, float]] = None,
         title: Optional[str] = None,
     ) -> plt.Figure:
-        """Plot the pulse schedule and waveform sequence in the time domain before running the experiment.
-
-        - 1D Frequency Sweep: Plots the fixed probe pulse sequence on XY (and Z if constant flux bias is set).
-        - 2D Power Spectroscopy (swept amplitude): Plots the representative XY probe waveform with a shaded
-          sweep envelope and a vertical double-headed range arrow indicating the sweep variable amp in [min, max].
-        - 2D Flux Spectroscopy (swept flux bias): Plots the XY probe pulse and the center-aligned Z FlatTop
-          flux pulse, with a double-headed range arrow on the Z channel indicating the sweep variable Phi in [min, max] Phi_0.
-
-        Args:
-            dt: Sampling time resolution in seconds (defaults to sequence-adaptive step).
-            figsize: Figure size tuple (width, height).
-            title: Custom title string.
-
-        Returns:
-            plt.Figure: The rendered matplotlib figure.
-        """
+        """Plot the pulse schedule and waveform sequence in the time domain before running the experiment."""
         # Case 1: 1D Frequency Sweep
         if not self.is_2d:
-            single_amp = _to_single_value(self.amps, default=0.1)
-            single_flux = _to_single_value(self.flux, default=None)
+            s_amp, s_flux, s_dur, s_kwargs = self._get_step_params(0.0)
             seq = self._build_sequence(
                 transmon=self.transmon,
-                current_amp=single_amp,
-                current_flux=single_flux,
+                current_amp=s_amp,
+                current_flux=s_flux,
                 pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
+                duration=s_dur,
+                **s_kwargs,
             )
             default_title = (
                 f"Spectroscopy Pulse Sequence: 1D Frequency Sweep ({self.transmon.name})"
-                + (f" [amp={single_amp:.2f}]" if single_amp is not None else "")
-                + (f" [flux={single_flux:.3f}Φ₀]" if single_flux is not None else "")
+                + (f" [amp={s_amp:.2f}]" if s_amp is not None else "")
+                + (f" [flux={s_flux:.3f}Φ₀]" if s_flux is not None else "")
             )
             return seq.plot(dt=dt, figsize=figsize, title=title or default_title)
 
-        # Case 2: 2D Power Spectroscopy (Sweep Amplitude)
-        if self.sweep_param == "amp":
-            a_min = float(np.min(self.sweep_vals))
-            a_max = float(np.max(self.sweep_vals))
-            if abs(a_max) >= abs(a_min) and a_max != 0.0:
-                a_rep = a_max
-            elif a_min != 0.0:
-                a_rep = a_min
-            else:
-                a_rep = 0.5
+        # Case 2: 2D Multi-parameter Sweep
+        meta = _get_param_meta(self.sweep_param or "")
+        p_type = meta["type"]
+        scale_val = meta["scale"]
+        unit_str = meta["unit"]
+        label_str = meta["label"]
 
-            single_flux = _to_single_value(self.flux, default=None)
-            seq_rep = self._build_sequence(
-                transmon=self.transmon,
-                current_amp=a_rep,
-                current_flux=single_flux,
-                pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
-            )
-            seq_min = self._build_sequence(
-                transmon=self.transmon,
-                current_amp=a_min,
-                current_flux=single_flux,
-                pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
-            )
-            seq_max = self._build_sequence(
-                transmon=self.transmon,
-                current_amp=a_max,
-                current_flux=single_flux,
-                pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
-            )
+        v_min = float(np.min(self.sweep_vals))
+        v_max = float(np.max(self.sweep_vals))
+        v_min_scaled = v_min / scale_val
+        v_max_scaled = v_max / scale_val
 
-            eff_dt = dt if dt is not None else min(seq_rep.duration / 250, 5e-10)
-            times, waves_rep = seq_rep.sample(dt=eff_dt)
-            _, waves_min = seq_min.sample(dt=eff_dt)
-            _, waves_max = seq_max.sample(dt=eff_dt)
+        if p_type == "time":
+            v_rep = v_max
+        elif p_type == "flux":
+            v_rep = v_max if abs(v_max) >= abs(v_min) and v_max != 0 else (v_min if v_min != 0 else 0.25)
+        elif p_type == "amplitude":
+            v_rep = v_max if abs(v_max) >= abs(v_min) and v_max != 0 else (v_min if v_min != 0 else 0.5)
+        else:
+            v_rep = v_max if v_max != 0 else v_min
 
-            channels = seq_rep.channels
-            n_ch = len(channels)
-            fig, axes = plt.subplots(
-                n_ch, 1, figsize=figsize or (10, 3.2 * n_ch), sharex=True, squeeze=False
-            )
+        s_amp_rep, s_flux_rep, s_dur_rep, s_kw_rep = self._get_step_params(v_rep)
+        s_amp_min, s_flux_min, s_dur_min, s_kw_min = self._get_step_params(v_min)
+        s_amp_max, s_flux_max, s_dur_max, s_kw_max = self._get_step_params(v_max)
 
-            xy_ch = self.transmon.xy
-            z_ch = self.transmon.z if single_flux is not None else None
+        seq_rep = self._build_sequence(self.transmon, s_amp_rep, s_flux_rep, self.pulse_type, s_dur_rep, **s_kw_rep)
+        seq_min = self._build_sequence(self.transmon, s_amp_min, s_flux_min, self.pulse_type, s_dur_min, **s_kw_min)
+        seq_max = self._build_sequence(self.transmon, s_amp_max, s_flux_max, self.pulse_type, s_dur_max, **s_kw_max)
 
-            # Subplot for XY channel
-            ax_xy = axes[0, 0]
-            w_rep = waves_rep[xy_ch].real
-            w_min = waves_min[xy_ch].real
-            w_max = waves_max[xy_ch].real
+        max_dur = max(seq_rep.duration, seq_min.duration, seq_max.duration)
+        eff_dt = dt if dt is not None else min(max_dur / 250, 5e-10)
 
-            ax_xy.plot(times * 1e9, w_rep, label=f"Representative Pulse (amp={a_rep:.2f})", color="#1f77b4", lw=2)
-            if a_min != a_max:
-                ax_xy.plot(times * 1e9, w_min, ls="--", color="#ff7f0e", lw=1.2, alpha=0.8, label=f"Min Amp ({a_min:.2f})")
-                ax_xy.plot(times * 1e9, w_max, ls="--", color="#d62728", lw=1.2, alpha=0.8, label=f"Max Amp ({a_max:.2f})")
-                ax_xy.fill_between(times * 1e9, w_min, w_max, color="#1f77b4", alpha=0.15, label="Swept Amp Range")
+        times, waves_rep = seq_rep.sample(dt=eff_dt)
+        _, waves_min = seq_min.sample(dt=eff_dt)
+        _, waves_max = seq_max.sample(dt=eff_dt)
 
-                peak_idx = int(np.argmax(np.abs(w_rep)))
-                t_peak_ns = times[peak_idx] * 1e9
-                val_min = w_min[peak_idx]
-                val_max = w_max[peak_idx]
+        target_len = len(times)
+        def _align_len(arr):
+            if len(arr) < target_len:
+                return np.pad(arr, (0, target_len - len(arr)))
+            return arr[:target_len]
+
+        has_z_channel = (self.sweep_param == "flux") or (self.single_flux is not None)
+        xy_ch = self.transmon.xy
+        z_ch = self.transmon.z
+
+        n_ch = 2 if has_z_channel else 1
+        fig, axes = plt.subplots(n_ch, 1, figsize=figsize or (10, 3.2 * n_ch), sharex=True, squeeze=False)
+
+        ax_xy = axes[0, 0]
+        w_xy_rep = _align_len(waves_rep.get(xy_ch, np.zeros(target_len, dtype=complex)).real)
+        w_xy_min = _align_len(waves_min.get(xy_ch, np.zeros(target_len, dtype=complex)).real)
+        w_xy_max = _align_len(waves_max.get(xy_ch, np.zeros(target_len, dtype=complex)).real)
+
+        times_ns = times * 1e9
+
+        if p_type == "amplitude":
+            ax_xy.plot(times_ns, w_xy_rep, label=f"Representative Pulse ({label_str}={v_rep / scale_val:.2f})", color="#1f77b4", lw=2)
+            if v_min != v_max:
+                ax_xy.plot(times_ns, w_xy_min, ls="--", color="#ff7f0e", lw=1.2, alpha=0.8, label=f"Min ({v_min_scaled:.2f})")
+                ax_xy.plot(times_ns, w_xy_max, ls="--", color="#d62728", lw=1.2, alpha=0.8, label=f"Max ({v_max_scaled:.2f})")
+                ax_xy.fill_between(times_ns, w_xy_min, w_xy_max, color="#1f77b4", alpha=0.15, label="Swept Range")
+
+                peak_idx = int(np.argmax(np.abs(w_xy_rep)))
+                t_peak_ns = times_ns[peak_idx]
+                val_min = w_xy_min[peak_idx]
+                val_max = w_xy_max[peak_idx]
 
                 ax_xy.annotate(
                     "",
@@ -669,13 +733,13 @@ class QubitSpectroscopyExperiment:
                     arrowprops=dict(arrowstyle="<->", color="#d62728", lw=2.2, mutation_scale=16),
                     zorder=5,
                 )
-                total_t_ns = (times[-1] - times[0]) * 1e9
-                text_x = min(t_peak_ns + 0.03 * total_t_ns, times[-1] * 1e9 - 0.1 * total_t_ns)
+                total_t_ns = times_ns[-1] - times_ns[0]
+                text_x = min(t_peak_ns + 0.03 * total_t_ns, times_ns[-1] - 0.15 * total_t_ns)
                 text_y = (val_min + val_max) / 2.0
                 ax_xy.text(
                     text_x,
                     text_y,
-                    f"  Sweep amp:\n  [{a_min:.2f} → {a_max:.2f}]",
+                    f"  Sweep {self.sweep_param}:\n  [{v_min_scaled:.2f} → {v_max_scaled:.2f}] {unit_str}",
                     color="#d62728",
                     fontsize=10,
                     fontweight="bold",
@@ -683,152 +747,149 @@ class QubitSpectroscopyExperiment:
                     zorder=6,
                     bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.85, edgecolor="#d62728"),
                 )
+        elif p_type == "time" and self.sweep_param in ("duration", "length"):
+            ax_xy.plot(times_ns, w_xy_min, ls="--", color="#ff7f0e", lw=1.8, label=f"Min Duration ({v_min_scaled:.1f} ns)")
+            ax_xy.plot(times_ns, w_xy_max, color="#1f77b4", lw=2.0, label=f"Max Duration ({v_max_scaled:.1f} ns)")
+            ax_xy.fill_between(times_ns, w_xy_min, w_xy_max, color="#1f77b4", alpha=0.15, label="Duration Expansion Range")
 
-            ax_xy.set_ylabel(f"{xy_ch}\nAmplitude (AWG V₀)", fontsize=10)
-            ax_xy.grid(True, alpha=0.3)
-            ax_xy.legend(loc="upper right")
+            amp_peak = np.max(np.abs(w_xy_max))
+            y_arrow = (amp_peak if amp_peak > 0 else 1.0) * 0.5
+            ax_xy.annotate(
+                "",
+                xy=(v_min_scaled, y_arrow),
+                xytext=(v_max_scaled, y_arrow),
+                arrowprops=dict(arrowstyle="<->", color="#d62728", lw=2.2, mutation_scale=16),
+                zorder=5,
+            )
+            ax_xy.text(
+                (v_min_scaled + v_max_scaled) / 2.0,
+                y_arrow + 0.08 * (amp_peak if amp_peak > 0 else 1.0),
+                f"Sweep duration: [{v_min_scaled:.1f} → {v_max_scaled:.1f}] ns",
+                color="#d62728",
+                fontsize=10,
+                fontweight="bold",
+                ha="center",
+                va="bottom",
+                zorder=6,
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.85, edgecolor="#d62728"),
+            )
+        elif p_type == "time":
+            ax_xy.plot(times_ns, w_xy_min, ls="--", color="#ff7f0e", lw=1.5, label=f"Min {label_str} ({v_min_scaled:.1f} ns)")
+            ax_xy.plot(times_ns, w_xy_max, color="#1f77b4", lw=2.0, label=f"Max {label_str} ({v_max_scaled:.1f} ns)")
+            ax_xy.fill_between(times_ns, w_xy_min, w_xy_max, color="#1f77b4", alpha=0.15, label="Edge/Ramp Variation")
 
-            if z_ch and z_ch in channels:
-                ax_z = axes[1, 0]
-                w_z = waves_rep[z_ch].real
-                ax_z.plot(times * 1e9, w_z, label=f"Constant Flux Pulse (flux={single_flux:.3f}Φ₀)", color="#2ca02c", lw=2)
-                ax_z.set_ylabel(f"{z_ch}\nFlux Bias (Φ₀)", fontsize=10)
-                ax_z.grid(True, alpha=0.3)
-                ax_z.legend(loc="upper right")
-
-            axes[-1, 0].set_xlabel("Time (ns)")
-            default_title = f"Spectroscopy Pulse Sequence: 2D Power Sweep ({self.transmon.name}) [amp: {a_min:.2f} → {a_max:.2f}]"
-            fig.suptitle(title or default_title, fontsize=12, y=1.01)
-            plt.tight_layout()
-            return fig
-
-        # Case 3: 2D Flux Spectroscopy (Sweep Flux)
-        if self.sweep_param == "flux":
-            phi_min = float(np.min(self.sweep_vals))
-            phi_max = float(np.max(self.sweep_vals))
-            if abs(phi_max) >= abs(phi_min) and phi_max != 0.0:
-                phi_rep = phi_max
-            elif phi_min != 0.0:
-                phi_rep = phi_min
+            amp_peak = np.max(np.abs(w_xy_max))
+            ax_xy.text(
+                times_ns[len(times_ns)//2],
+                amp_peak * 0.85,
+                f"Sweep {self.sweep_param}: [{v_min_scaled:.1f} → {v_max_scaled:.1f}] ns",
+                color="#d62728",
+                fontsize=10,
+                fontweight="bold",
+                ha="center",
+                va="top",
+                zorder=6,
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.85, edgecolor="#d62728"),
+            )
+        else:
+            if self.sweep_param == "flux":
+                ax_xy.plot(times_ns, w_xy_rep, label=f"Probe Pulse (amp={self.single_amp:.2f})", color="#1f77b4", lw=2)
             else:
-                phi_rep = 0.25
+                ax_xy.plot(times_ns, w_xy_min, ls="--", color="#ff7f0e", lw=1.5, label=f"Min ({v_min_scaled:.2f} {unit_str})")
+                ax_xy.plot(times_ns, w_xy_max, color="#1f77b4", lw=2.0, label=f"Max ({v_max_scaled:.2f} {unit_str})")
+                ax_xy.fill_between(times_ns, w_xy_min, w_xy_max, color="#1f77b4", alpha=0.15, label="Swept Envelope Range")
 
-            single_amp = _to_single_value(self.amps, default=0.1)
-            seq_rep = self._build_sequence(
-                transmon=self.transmon,
-                current_amp=single_amp,
-                current_flux=phi_rep,
-                pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
-            )
-            seq_min = self._build_sequence(
-                transmon=self.transmon,
-                current_amp=single_amp,
-                current_flux=phi_min,
-                pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
-            )
-            seq_max = self._build_sequence(
-                transmon=self.transmon,
-                current_amp=single_amp,
-                current_flux=phi_max,
-                pulse_type=self.pulse_type,
-                duration=self.duration,
-                **self.pulse_kwargs,
-            )
-
-            eff_dt = dt if dt is not None else min(seq_rep.duration / 250, 5e-10)
-            times, waves_rep = seq_rep.sample(dt=eff_dt)
-            _, waves_min = seq_min.sample(dt=eff_dt)
-            _, waves_max = seq_max.sample(dt=eff_dt)
-
-            xy_ch = self.transmon.xy
-            z_ch = self.transmon.z
-
-            fig, axes = plt.subplots(2, 1, figsize=figsize or (10, 6.2), sharex=True, squeeze=False)
-
-            # Subplot 1: XY probe pulse
-            ax_xy = axes[0, 0]
-            w_xy = waves_rep[xy_ch].real
-            ax_xy.plot(times * 1e9, w_xy, label=f"Probe Pulse (amp={single_amp:.2f}, dur={self.duration * 1e9:.0f}ns)", color="#1f77b4", lw=2)
-            ax_xy.set_ylabel(f"{xy_ch}\nAmplitude (AWG V₀)", fontsize=10)
-            ax_xy.grid(True, alpha=0.3)
-            ax_xy.legend(loc="upper right")
-
-            # Subplot 2: Z flux bias pulse
-            ax_z = axes[1, 0]
-            w_z_rep = waves_rep[z_ch].real
-            w_z_min = waves_min[z_ch].real
-            w_z_max = waves_max[z_ch].real
-
-            ax_z.plot(times * 1e9, w_z_rep, label=f"Representative Z Pulse (Φ={phi_rep:.2f}Φ₀)", color="#2ca02c", lw=2)
-            if phi_min != phi_max:
-                ax_z.plot(times * 1e9, w_z_min, ls="--", color="#ff7f0e", lw=1.2, alpha=0.8, label=f"Min Flux ({phi_min:.2f}Φ₀)")
-                ax_z.plot(times * 1e9, w_z_max, ls="--", color="#d62728", lw=1.2, alpha=0.8, label=f"Max Flux ({phi_max:.2f}Φ₀)")
-                ax_z.fill_between(times * 1e9, w_z_min, w_z_max, color="#2ca02c", alpha=0.15, label="Swept Flux Range")
-
-                mid_idx = len(times) // 2
-                t_mid_ns = times[mid_idx] * 1e9
-                val_min = w_z_min[mid_idx]
-                val_max = w_z_max[mid_idx]
-
-                ax_z.annotate(
-                    "",
-                    xy=(t_mid_ns, val_min),
-                    xytext=(t_mid_ns, val_max),
-                    arrowprops=dict(arrowstyle="<->", color="#d62728", lw=2.2, mutation_scale=16),
-                    zorder=5,
-                )
-                total_t_ns = (times[-1] - times[0]) * 1e9
-                text_x = min(t_mid_ns + 0.03 * total_t_ns, times[-1] * 1e9 - 0.1 * total_t_ns)
-                text_y = (val_min + val_max) / 2.0
-                ax_z.text(
-                    text_x,
-                    text_y,
-                    f"  Sweep Φ:\n  [{phi_min:.2f} → {phi_max:.2f}] Φ₀",
+                amp_peak = np.max(np.abs(w_xy_max))
+                ax_xy.text(
+                    times_ns[len(times_ns)//2],
+                    amp_peak * 0.85,
+                    f"Sweep {self.sweep_param}: [{v_min_scaled:.2f} → {v_max_scaled:.2f}] {unit_str}",
                     color="#d62728",
                     fontsize=10,
                     fontweight="bold",
-                    va="center",
+                    ha="center",
+                    va="top",
                     zorder=6,
                     bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.85, edgecolor="#d62728"),
                 )
+
+        ax_xy.set_ylabel(f"{xy_ch}\nAmplitude (AWG V₀)", fontsize=10)
+        ax_xy.grid(True, alpha=0.3)
+        ax_xy.legend(loc="upper right")
+
+        if has_z_channel:
+            ax_z = axes[1, 0]
+            w_z_rep = _align_len(waves_rep.get(z_ch, np.zeros(target_len, dtype=complex)).real)
+            w_z_min = _align_len(waves_min.get(z_ch, np.zeros(target_len, dtype=complex)).real)
+            w_z_max = _align_len(waves_max.get(z_ch, np.zeros(target_len, dtype=complex)).real)
+
+            if self.sweep_param == "flux":
+                ax_z.plot(times_ns, w_z_rep, label=f"Representative Z Pulse (Φ={v_rep:.2f}Φ₀)", color="#2ca02c", lw=2)
+                if v_min != v_max:
+                    ax_z.plot(times_ns, w_z_min, ls="--", color="#ff7f0e", lw=1.2, alpha=0.8, label=f"Min Flux ({v_min_scaled:.2f}Φ₀)")
+                    ax_z.plot(times_ns, w_z_max, ls="--", color="#d62728", lw=1.2, alpha=0.8, label=f"Max Flux ({v_max_scaled:.2f}Φ₀)")
+                    ax_z.fill_between(times_ns, w_z_min, w_z_max, color="#2ca02c", alpha=0.15, label="Swept Flux Range")
+
+                    mid_idx = len(times) // 2
+                    t_mid_ns = times_ns[mid_idx]
+                    val_min = w_z_min[mid_idx]
+                    val_max = w_z_max[mid_idx]
+
+                    ax_z.annotate(
+                        "",
+                        xy=(t_mid_ns, val_min),
+                        xytext=(t_mid_ns, val_max),
+                        arrowprops=dict(arrowstyle="<->", color="#d62728", lw=2.2, mutation_scale=16),
+                        zorder=5,
+                    )
+                    total_t_ns = times_ns[-1] - times_ns[0]
+                    text_x = min(t_mid_ns + 0.03 * total_t_ns, times_ns[-1] - 0.15 * total_t_ns)
+                    text_y = (val_min + val_max) / 2.0
+                    ax_z.text(
+                        text_x,
+                        text_y,
+                        f"  Sweep Φ:\n  [{v_min_scaled:.2f} → {v_max_scaled:.2f}] Φ₀",
+                        color="#d62728",
+                        fontsize=10,
+                        fontweight="bold",
+                        va="center",
+                        zorder=6,
+                        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.85, edgecolor="#d62728"),
+                    )
+            else:
+                if self.sweep_param in ("duration", "length"):
+                    ax_z.plot(times_ns, w_z_min, ls="--", color="#ff7f0e", lw=1.5, label=f"Min Z Bias (Φ={self.single_flux:.3f}Φ₀)")
+                    ax_z.plot(times_ns, w_z_max, color="#2ca02c", lw=2.0, label=f"Max Z Bias (Φ={self.single_flux:.3f}Φ₀)")
+                    ax_z.fill_between(times_ns, w_z_min, w_z_max, color="#2ca02c", alpha=0.15, label="Z Pulse Dynamic Extension")
+                else:
+                    ax_z.plot(times_ns, w_z_rep, label=f"Constant Flux Pulse (Φ={self.single_flux:.3f}Φ₀)", color="#2ca02c", lw=2)
 
             ax_z.set_ylabel(f"{z_ch}\nFlux Bias (Φ₀)", fontsize=10)
             ax_z.grid(True, alpha=0.3)
             ax_z.legend(loc="upper right")
 
-            axes[-1, 0].set_xlabel("Time (ns)")
-            default_title = f"Spectroscopy Pulse Sequence: 2D Flux Sweep ({self.transmon.name}) [Φ: {phi_min:.2f} → {phi_max:.2f}]"
-            fig.suptitle(title or default_title, fontsize=12, y=1.01)
-            plt.tight_layout()
-            return fig
-
-        raise RuntimeError("Invalid experiment configuration.")
+        axes[-1, 0].set_xlabel("Time (ns)")
+        default_title = (
+            f"Spectroscopy Pulse Sequence: 2D {label_str} Sweep ({self.transmon.name}) "
+            f"[{self.sweep_param}: {v_min_scaled:.2f} → {v_max_scaled:.2f}{(' ' + unit_str) if unit_str and unit_str != 'a.u.' else ''}]"
+        )
+        fig.suptitle(title or default_title, fontsize=12, y=1.01)
+        plt.tight_layout()
+        return fig
 
     def _run_instance(self) -> SpectroscopyResult:
         """Execute the configured 1D or 2D Qubit Spectroscopy experiment."""
         transmon = self.transmon
         freqs_arr = self.freqs
-        amps = self.amps
-        flux = self.flux
         pulse_type = self.pulse_type
-        duration = self.duration
         dt = self.dt
         fit = self.fit
-        pulse_kwargs = self.pulse_kwargs
 
         # -------------------------------------------------------------
-        # 2D Sweep: Power Spectroscopy (Amplitudes vs Frequencies)
+        # 2D Sweep: Multi-parameter Spectroscopy (Any swept parameter)
         # -------------------------------------------------------------
-        if self.amps_multi:
-            sweep_param = "amp"
-            sweep_vals = self.sweep_vals
-            single_flux = _to_single_value(flux, default=None)
-
-            n_sweep = len(sweep_vals)
+        if self.is_2d:
+            n_sweep = len(self.sweep_vals)
             n_freqs = len(freqs_arr)
             p1_grid = np.zeros((n_sweep, n_freqs), dtype=float)
             p2_grid = np.zeros((n_sweep, n_freqs), dtype=float)
@@ -837,14 +898,15 @@ class QubitSpectroscopyExperiment:
                 n: np.zeros((n_sweep, n_freqs), dtype=float) for n in range(transmon.levels)
             }
 
-            for i, a in enumerate(sweep_vals):
+            for i, val in enumerate(self.sweep_vals):
+                s_amp, s_flux, s_dur, s_kwargs = self._get_step_params(val)
                 seq = self._build_sequence(
                     transmon=transmon,
-                    current_amp=float(a),
-                    current_flux=single_flux,
+                    current_amp=s_amp,
+                    current_flux=s_flux,
                     pulse_type=pulse_type,
-                    duration=duration,
-                    **pulse_kwargs,
+                    duration=s_dur,
+                    **s_kwargs,
                 )
                 for j, f_d in enumerate(freqs_arr):
                     res = Simulator.run(transmon, seq, dt=dt, f_d=float(f_d))
@@ -860,83 +922,29 @@ class QubitSpectroscopyExperiment:
                 freqs=freqs_arr,
                 transmon=transmon,
                 is_2d=True,
-                sweep_param=sweep_param,
-                sweep_vals=sweep_vals,
+                sweep_param=self.sweep_param,
+                sweep_vals=self.sweep_vals,
                 p1_grid=p1_grid,
                 p2_grid=p2_grid,
                 p_exc_grid=p_exc_grid,
                 populations_grid=populations_grid,
                 pulse_type=pulse_type,
-                duration=duration,
-                amp=None,
-                flux=single_flux,
-            )
-
-        # -------------------------------------------------------------
-        # 2D Sweep: Flux Spectroscopy (Flux vs Frequencies)
-        # -------------------------------------------------------------
-        if self.flux_multi:
-            sweep_param = "flux"
-            sweep_vals = self.sweep_vals
-            single_amp = _to_single_value(amps, default=0.1)
-
-            n_sweep = len(sweep_vals)
-            n_freqs = len(freqs_arr)
-            p1_grid = np.zeros((n_sweep, n_freqs), dtype=float)
-            p2_grid = np.zeros((n_sweep, n_freqs), dtype=float)
-            p_exc_grid = np.zeros((n_sweep, n_freqs), dtype=float)
-            populations_grid = {
-                n: np.zeros((n_sweep, n_freqs), dtype=float) for n in range(transmon.levels)
-            }
-
-            for i, phi in enumerate(sweep_vals):
-                seq = self._build_sequence(
-                    transmon=transmon,
-                    current_amp=single_amp,
-                    current_flux=float(phi),
-                    pulse_type=pulse_type,
-                    duration=duration,
-                    **pulse_kwargs,
-                )
-                for j, f_d in enumerate(freqs_arr):
-                    res = Simulator.run(transmon, seq, dt=dt, f_d=float(f_d))
-                    p0 = res.final_population(0)
-                    p1_grid[i, j] = res.final_population(1)
-                    if transmon.levels >= 3:
-                        p2_grid[i, j] = res.final_population(2)
-                    p_exc_grid[i, j] = max(0.0, min(1.0, 1.0 - p0))
-                    for n in range(transmon.levels):
-                        populations_grid[n][i, j] = res.final_population(n)
-
-            return SpectroscopyResult(
-                freqs=freqs_arr,
-                transmon=transmon,
-                is_2d=True,
-                sweep_param=sweep_param,
-                sweep_vals=sweep_vals,
-                p1_grid=p1_grid,
-                p2_grid=p2_grid,
-                p_exc_grid=p_exc_grid,
-                populations_grid=populations_grid,
-                pulse_type=pulse_type,
-                duration=duration,
-                amp=single_amp,
-                flux=None,
+                duration=self.single_duration if self.sweep_param not in ("duration", "length") else None,
+                amp=self.single_amp if self.sweep_param not in ("amps", "amp") else None,
+                flux=self.single_flux if self.sweep_param != "flux" else None,
             )
 
         # -------------------------------------------------------------
         # 1D Sweep: Frequency Sweep
         # -------------------------------------------------------------
-        single_amp = _to_single_value(amps, default=0.1)
-        single_flux = _to_single_value(flux, default=None)
-
+        s_amp, s_flux, s_dur, s_kwargs = self._get_step_params(0.0)
         seq = self._build_sequence(
             transmon=transmon,
-            current_amp=single_amp,
-            current_flux=single_flux,
+            current_amp=s_amp,
+            current_flux=s_flux,
             pulse_type=pulse_type,
-            duration=duration,
-            **pulse_kwargs,
+            duration=s_dur,
+            **s_kwargs,
         )
 
         p_all: Dict[int, List[float]] = {n: [] for n in range(transmon.levels)}
@@ -956,7 +964,7 @@ class QubitSpectroscopyExperiment:
 
         fit_info: Dict[str, Any] = {}
         if fit and len(freqs_arr) >= 7:
-            eff_f01 = transmon.frequency_at_flux(single_flux)
+            eff_f01 = transmon.frequency_at_flux(s_flux)
             f01_guess = eff_f01
             f02_half_guess = (eff_f01 + transmon.alpha / 2.0) if transmon.levels >= 3 else None
             fit_info = fit_spectroscopy_peaks(
@@ -977,19 +985,17 @@ class QubitSpectroscopyExperiment:
             populations=p_all_arr,
             fit_info=fit_info,
             pulse_type=pulse_type,
-            duration=duration,
-            amp=single_amp,
-            flux=single_flux,
+            duration=s_dur,
+            amp=s_amp,
+            flux=s_flux,
         )
 
     def __repr__(self) -> str:
         mode = f"2D ({self.sweep_param})" if self.is_2d else "1D"
+        dur_str = f"{self.single_duration:.2e}s" if self.sweep_param not in ("duration", "length") else f"swept[{len(self.sweep_vals)}]"
         return (
-            f"QubitSpectroscopyExperiment(transmon='{self.transmon.name}', mode='{mode}', "
+            f"Spectroscopy(transmon='{self.transmon.name}', mode='{mode}', "
             f"freqs=[{self.freqs[0]:.3e}, {self.freqs[-1]:.3e}] Hz, "
-            f"pulse={self.pulse_type.__name__}, duration={self.duration:.2e}s)"
+            f"pulse={self.pulse_type.__name__}, duration={dur_str})"
         )
 
-
-# Alias
-SpectroscopyExperiment = QubitSpectroscopyExperiment
