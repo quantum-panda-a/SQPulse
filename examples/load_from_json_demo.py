@@ -12,7 +12,7 @@ from sqpulse import (
     PulseSequence,
     GaussianPulse,
     FlatTopPulse,
-    Simulator,
+    Measurement,
     ns,
     us,
     MHz,
@@ -62,7 +62,7 @@ def main():
     # 施加 50 ns Z 偏置磁通脉冲 (电压驱动自动折算为超导环净磁通)
     seq.add(q0.z, FlatTopPulse(duration=50 * ns, amp=0.1 * q0.v_phi0, ramp_time=5 * ns))
 
-    sim_res = Simulator.run(q0, seq, dt=1.0 * ns)
+    sim_res = Measurement.run(q0, seq, dt=1.0 * ns)
     p0 = sim_res.final_population(0)
     p1 = sim_res.final_population(1)
     p2 = sim_res.final_population(2)

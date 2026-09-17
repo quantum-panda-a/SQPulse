@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..sequence.sequence import PulseSequence
-from ..measurement.projective import Simulator
 from .fitting import fit_decay
 
 

@@ -8,7 +8,6 @@ from .base import MeasurementBackend, BaseMeasurementResult
 from .projective import (
     ProjectiveBackend,
     ProjectiveResult,
-    Simulator,
     SimulationResult,
 )
 from .dispersive import DispersiveReadoutBackend, DispersiveResult, IQDiscriminator
@@ -39,24 +38,50 @@ class Measurement:
     @classmethod
     def run(
         cls,
-        qubit: Transmon,
-        sequence: PulseSequence,
+        target: Optional[Any] = None,
+        sequence: Optional[PulseSequence] = None,
         backend: Union[str, MeasurementBackend] = "projective",
+        *,
+        qubit: Optional[Any] = None,
         **kwargs,
     ) -> BaseMeasurementResult:
-        """Execute a measurement/simulation with the selected backend.
+        """Execute a measurement or state evolution simulation with the selected backend.
 
         Args:
-            qubit: Physical Transmon model.
+            target: Physical quantum model (e.g. Transmon) or composite system (QuantumSystem).
             sequence: PulseSequence to simulate.
-            backend: Backend name (e.g. 'projective', 'dispersive') or a MeasurementBackend instance.
-            **kwargs: Extra parameters passed to the backend run() method.
+            backend: Backend name (e.g. 'projective', 'dispersive') or a MeasurementBackend instance (default 'projective').
+            qubit: Alias for target for backward compatibility.
+            **kwargs: Extra backend-specific parameters passed to the backend run() method:
+                For 'projective' backend:
+                    - dt (float): Simulation time step in seconds (default 5e-10 s = 0.5 ns).
+                    - f_d (float or dict): Rotating frame reference frequency in Hz.
+                    - init_state (qutip.Qobj): Initial state vector or density matrix (default ground state).
+                    - shots (int): Number of projective shots to sample.
+                    - seed (int): Random seed for shot sampling.
+                    - c_ops (list[qutip.Qobj]): Custom Lindblad collapse operators.
+                    - solver_options (dict): Options passed to qutip.mesolve.
+                    - include_dissipation (bool): Whether to include intrinsic T1/T2 collapse operators (default True).
+                For 'dispersive' backend:
+                    - resonator (ReadoutResonator): Readout resonator cavity model.
+                    - readout_pulse (Pulse): Micro-wave pulse applied to readout resonator.
+                    - shots (int): Number of readout shots to sample (default 1000).
+                    - snr_db (float): Readout signal-to-noise ratio in dB (default 12.0).
+                    - f_ro (float): Readout carrier frequency in Hz.
+                    - dt (float): Cavity ODE simulation time step in seconds (default 1e-9 s = 1 ns).
+                    - seed (int): Random seed for noise and shot sampling.
 
         Returns:
-            Result instance specific to the backend (e.g. ProjectiveResult, DispersiveResult).
+            Result instance specific to the backend (ProjectiveResult or DispersiveResult).
         """
+        resolved_target = target if target is not None else qubit
+        if resolved_target is None:
+            raise ValueError("Must provide either target or qubit to Measurement.run")
+
+        seq = sequence or PulseSequence()
+
         if isinstance(backend, MeasurementBackend):
-            return backend.run(qubit, sequence, **kwargs)
+            return backend.run(resolved_target, seq, **kwargs)
 
         backend_key = str(backend).lower()
         if backend_key not in cls._backends:
@@ -66,7 +91,7 @@ class Measurement:
             )
 
         backend_instance = cls._backends[backend_key]()
-        return backend_instance.run(qubit, sequence, **kwargs)
+        return backend_instance.run(resolved_target, seq, **kwargs)
 
 
 __all__ = [
@@ -75,9 +100,9 @@ __all__ = [
     "BaseMeasurementResult",
     "ProjectiveBackend",
     "ProjectiveResult",
-    "Simulator",
     "SimulationResult",
     "DispersiveReadoutBackend",
     "DispersiveResult",
     "IQDiscriminator",
 ]
+

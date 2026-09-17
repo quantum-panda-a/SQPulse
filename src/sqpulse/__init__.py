@@ -55,7 +55,6 @@ from .measurement import (
     DispersiveReadoutBackend,
     DispersiveResult,
     IQDiscriminator,
-    Simulator,
     SimulationResult,
 )
 from .experiments import (
@@ -151,7 +150,6 @@ __all__ = [
     "save_models",
     "PulseSequence",
     "Channel",
-    "Simulator",
     "SimulationResult",
     "Measurement",
     "MeasurementBackend",

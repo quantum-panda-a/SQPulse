@@ -10,7 +10,7 @@ from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..pulses.shapes import SquarePulse, FlatTopPulse
 from ..sequence.sequence import PulseSequence
-from ..measurement.projective import Simulator
+from ..measurement import Measurement
 from .fitting import fit_spectroscopy_peaks
 
 
@@ -909,7 +909,7 @@ class Spectroscopy:
                     **s_kwargs,
                 )
                 for j, f_d in enumerate(freqs_arr):
-                    res = Simulator.run(transmon, seq, dt=dt, f_d=float(f_d))
+                    res = Measurement.run(transmon, seq, dt=dt, f_d=float(f_d))
                     p0 = res.final_population(0)
                     p1_grid[i, j] = res.final_population(1)
                     if transmon.levels >= 3:
@@ -951,7 +951,7 @@ class Spectroscopy:
         p_exc_list: List[float] = []
 
         for f_d in freqs_arr:
-            res = Simulator.run(transmon, seq, dt=dt, f_d=float(f_d))
+            res = Measurement.run(transmon, seq, dt=dt, f_d=float(f_d))
             p0 = res.final_population(0)
             p_exc_list.append(max(0.0, min(1.0, 1.0 - p0)))
             for n in range(transmon.levels):

@@ -41,8 +41,9 @@
    - 无隐式全局副作用，通过链式或方法调用清晰添加脉冲 (`add`)、插入延时 (`delay`) 与多通道时钟同步 (`sync`)。
    - 一键绘制多通道时序图 (`seq.plot()`)，并可直接编译为 QuTiP 5 的 `QobjEvo` 含时哈密顿量。
 
-4. **动力学主方程演化与量子态分析 (`Simulator`)**：
-   - 基于现代 QuTiP 5 求解器快速求解密度矩阵或纯态演化。
+4. **统一测量与动力学主方程演化 (`Measurement`)**：
+   - 统一入口调度多种测量与物理仿真后端（理想投影演化 `projective` 或微波色散腔读出 `dispersive`）。
+   - 基于现代 QuTiP 5 求解器快速求解含时密度矩阵或纯态演化。
    - 提供各能级粒子数布居随时间演化曲线 (`plot_populations`)、Bloch 坐标曲线 (`plot_bloch_vector`) 及 3D Bloch 球轨迹投影 (`plot_bloch_sphere`)。
 
 5. **标准化经典量子实验协议 (`experiments`)**：
@@ -64,7 +65,7 @@ SQPulse 采用高度模块化的分层架构，各核心组件分工明确，协
 3. **`sequence`（多通道脉冲时序编排）**：
    - **负责波形的编排与调度**：通过 `PulseSequence` 与 `Channel` 统一编排多条物理引线（如 XY 驱动线 `q.xy`、Z 偏置线 `q.z`、RO 读出线 `q.ro`），支持时间对齐与延时插入 (`add`, `delay`, `sync`, `align_center`, `align`)，并可无缝编译为含时哈密顿量。
 4. **`measurement`（测量后端与观测方式）**：
-   - **定义测量的后端和方式**：提供两种物理精度的测量后端——高精度数值求解主方程态演化的投影后端（`ProjectiveBackend` / `Simulator`），以及贴近实际测控硬件、模拟谐振腔传输谱、Langevin 腔光子建立与衰减、数字 IQ 解调与单次聚类判决的色散读出后端（`DispersiveReadoutBackend`）。
+   - **定义测量的后端和方式**：提供统一的 `Measurement.run` 入口，支持两种物理精度的测量后端——高精度数值求解主方程态演化的投影后端（`ProjectiveBackend`，默认 `backend="projective"`），以及贴近实际测控硬件、模拟谐振腔传输谱、Langevin 腔光子建立与衰减、数字 IQ 解调与单次聚类判决的色散读出后端（`DispersiveReadoutBackend`）。
 5. **`experiments`（常用量子测量实验）**：
    - **定义常用的测量实验**：封装标准化的经典量子测控协议与自动化曲线拟合工具，内置 Rabi 振荡实验 (`RabiExperiment`)、$T_1$ 弛豫测量 (`T1Experiment`)、Ramsey 干涉实验 (`RamseyExperiment`) 以及 Qubit 能谱扫描 (`Spectroscopy`) 等。
 

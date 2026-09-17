@@ -10,7 +10,6 @@ from sqpulse import (
     CouplingTerm,
     PulseSequence,
     SquarePulse,
-    Simulator,
     ns,
     MHz,
     GHz,

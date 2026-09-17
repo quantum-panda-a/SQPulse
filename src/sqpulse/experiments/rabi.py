@@ -9,7 +9,6 @@ from ..models.transmon import Transmon
 from ..pulses.base import Pulse
 from ..pulses.shapes import GaussianPulse, SquarePulse
 from ..sequence.sequence import PulseSequence
-from ..measurement.projective import Simulator
 from .fitting import fit_sine
 
 

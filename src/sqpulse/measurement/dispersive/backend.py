@@ -152,8 +152,8 @@ class DispersiveReadoutBackend(MeasurementBackend):
 
     def run(
         self,
-        transmon: Transmon,
-        sequence: PulseSequence,
+        target: Any = None,
+        sequence: Optional[PulseSequence] = None,
         resonator: Optional[ReadoutResonator] = None,
         readout_pulse: Optional[Pulse] = None,
         shots: int = 1000,
@@ -161,12 +161,13 @@ class DispersiveReadoutBackend(MeasurementBackend):
         f_ro: Optional[float] = None,
         dt: float = 1e-9,
         seed: Optional[int] = None,
+        transmon: Any = None,
         **kwargs,
     ) -> DispersiveResult:
         """Simulate dispersive measurement on a Transmon driven by a PulseSequence.
 
         Args:
-            transmon: Physical Transmon model.
+            target: Physical Transmon model (or transmon keyword).
             sequence: Control pulse sequence executed before readout.
             resonator: Physical ReadoutResonator. If None, uses default 7 GHz cavity.
             readout_pulse: Pulse applied to readout resonator. If None, checks sequence channel transmon.ro or uses default FlatTop.
@@ -175,11 +176,18 @@ class DispersiveReadoutBackend(MeasurementBackend):
             f_ro: Readout carrier frequency in Hz (defaults to resonator bare frequency f_r).
             dt: Cavity ODE simulation time step in seconds (default 1e-9 s = 1 ns).
             seed: Optional seed for reproducible noise and shot sampling.
+            transmon: Alias for target for backward compatibility.
             **kwargs: Extra parameters passed to ProjectiveBackend for pre-readout evolution.
 
         Returns:
             DispersiveResult with IQ plane data, confusion matrix, and cavity trajectories.
         """
+        transmon = target if target is not None else transmon
+        if transmon is None:
+            raise ValueError("Must provide either target or transmon to DispersiveReadoutBackend.run")
+
+        seq = sequence or PulseSequence()
+
         if resonator is None:
             resonator = ReadoutResonator(
                 name=f"{transmon.name}_res",
@@ -193,7 +201,7 @@ class DispersiveReadoutBackend(MeasurementBackend):
 
         # 1. Run sequence dynamics with ProjectiveBackend to determine pre-measurement qubit state
         proj_backend = ProjectiveBackend()
-        proj_res = proj_backend.run(transmon=transmon, sequence=sequence, **kwargs)
+        proj_res = proj_backend.run(target=transmon, sequence=seq, **kwargs)
 
         p0 = proj_res.final_population(0)
         p1 = proj_res.final_population(1)

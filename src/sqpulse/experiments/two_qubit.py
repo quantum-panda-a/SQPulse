@@ -11,7 +11,7 @@ from ..models.transmon import Transmon
 from ..models.system import QuantumSystem
 from ..pulses.shapes import FlatTopPulse, SquarePulse, GaussianPulse
 from ..sequence.sequence import PulseSequence
-from ..measurement.projective.solver import Simulator
+from ..measurement import Measurement
 from ..measurement.projective.result import ProjectiveResult
 
 
@@ -360,9 +360,10 @@ def evaluate_two_qubit_gate(
 
     for j, s_in in enumerate(basis_states):
         init_k = kets_basis[j]
-        res = Simulator.run(
+        res = Measurement.run(
             target=system,
             sequence=sequence,
+            backend="projective",
             init_state=init_k,
             dt=dt,
             f_d=f_d,

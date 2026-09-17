@@ -14,7 +14,7 @@ from sqpulse import (
     parse_quantity,
     PulseSequence,
     GaussianPulse,
-    Simulator,
+    Measurement,
     ns,
     us,
     MHz,
@@ -283,7 +283,7 @@ def test_simulation_with_json_loaded_model():
     seq.add(q.xy, GaussianPulse(duration=20 * ns, amp=0.5))
 
     # Run simulation
-    res = Simulator.run(q, seq, dt=1.0 * ns)
+    res = Measurement.run(q, seq, dt=1.0 * ns)
     pop0 = res.final_population(0)
     pop1 = res.final_population(1)
 

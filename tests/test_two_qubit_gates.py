@@ -8,7 +8,7 @@ from sqpulse import (
     Transmon,
     QuantumSystem,
     PulseSequence,
-    Simulator,
+    Measurement,
     FluxISWAP,
     FluxCZ,
     flux_iswap_sequence,
@@ -83,7 +83,7 @@ def test_flux_iswap_dynamics(coupled_two_qubit_system):
 
     # Initial state |10>
     init_state = sys.fock(1, 0)
-    res = Simulator.run(target=sys, sequence=seq, init_state=init_state, dt=1e-10)
+    res = Measurement.run(target=sys, sequence=seq, init_state=init_state, dt=1e-10)
 
     # Multi-qubit population query
     p10 = res.population("10")
@@ -158,7 +158,7 @@ def test_cz_gate_dynamics(coupled_two_qubit_system):
 
     # Initial state |11>
     init_state = sys.fock(1, 1)
-    res = Simulator.run(target=sys, sequence=seq, init_state=init_state, dt=1e-10)
+    res = Measurement.run(target=sys, sequence=seq, init_state=init_state, dt=1e-10)
 
     # Check that |11> returns largely to |11> with low permanent leakage into |02>
     p11 = res.population("11")

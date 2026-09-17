@@ -2,11 +2,10 @@
 
 from .backend import ProjectiveBackend
 from .result import ProjectiveResult, SimulationResult
-from .solver import Simulator
 
 __all__ = [
     "ProjectiveBackend",
     "ProjectiveResult",
     "SimulationResult",
-    "Simulator",
 ]
+

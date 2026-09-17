@@ -11,7 +11,7 @@ from sqpulse import (
     flux_iswap_sequence,
     flux_cz_sequence,
     evaluate_two_qubit_gate,
-    Simulator,
+    Measurement,
     ns,
     MHz,
     GHz,
@@ -73,7 +73,7 @@ def main():
 
     # Start simulation from state |10>
     init_state = sys.fock(1, 0)
-    res_iswap = Simulator.run(target=sys, sequence=iswap_seq, init_state=init_state, dt=1e-10)
+    res_iswap = Measurement.run(target=sys, sequence=iswap_seq, init_state=init_state, dt=1e-10)
 
     print(f"Initial population in |10>: {res_iswap.population('10')[0]:.4f}")
     print(f"Final population in |10>:   {res_iswap.final_population('10'):.4f}")
@@ -119,7 +119,7 @@ def main():
 
     # Simulate with initial state |11>
     init_state_11 = sys.fock(1, 1)
-    res_cz = Simulator.run(target=sys, sequence=cz_seq, init_state=init_state_11, dt=1e-10)
+    res_cz = Measurement.run(target=sys, sequence=cz_seq, init_state=init_state_11, dt=1e-10)
 
     print(f"Initial population in |11>: {res_cz.population('11')[0]:.4f}")
     print(f"Final population in |11>:   {res_cz.final_population('11'):.4f}")
