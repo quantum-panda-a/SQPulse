@@ -340,3 +340,55 @@ def test_temperature_parsing_and_model():
     with pytest.raises(ValueError):
         Transmon("q_err", temperature=-10 * mK)
 
+
+def test_chip_config_with_couplings():
+    config_path = Path(__file__).parent.parent / "examples" / "chip_config.json"
+    assert config_path.is_file()
+
+    models = load_models(config_path)
+    assert isinstance(models, DeviceModels)
+    assert models.chip_name == "Demo-2Q-Chip"
+    assert "q1" in models
+    assert "q2" in models
+    assert "r1" in models
+    assert "r2" in models
+    assert len(models.couplings) == 3
+
+    # Check qubit temperature and thermal_population property
+    q1 = models["q1"]
+    assert np.isclose(q1.temperature, 0.035)
+    assert np.isclose(q1.thermal_population, 0.001054, rtol=1e-3)
+    # Check that thermal_population is not directly defined in exported dict
+    d_q1 = q1.to_dict()
+    assert "temperature" in d_q1
+    assert "thermal_population" not in d_q1
+
+    # Check resonator chi and g populated from couplings
+    r1 = models["r1"]
+    assert np.isclose(r1.chi_hz, 1.3e6)
+    assert np.isclose(r1.g_hz, 50e6)
+    assert r1.geometry == "hanger"
+    assert r1.is_dip is True
+
+    r2 = models["r2"]
+    assert np.isclose(r2.chi_hz, 1.1e6)
+    assert np.isclose(r2.g_hz, 50e6)
+    assert r2.geometry == "hanger"
+    assert r2.is_dip is True
+
+    # Check get_coupling
+    c_q1_r1 = models.get_coupling("q1", "r1")
+    assert c_q1_r1 is not None
+    assert c_q1_r1["name"] == "g_q1_r1"
+
+    c_q1_q2 = models.get_coupling("q2", "q1")
+    assert c_q1_q2 is not None
+    assert c_q1_q2["g"] == "15.0 MHz"
+
+    # Check to_quantum_system
+    sys = models.to_quantum_system(["q1", "q2"])
+    assert len(sys.modes) == 2
+    assert len(sys.coupling_terms) == 1
+    assert np.isclose(sys.coupling_terms[0].strength, 2.0 * np.pi * 15e6)
+
+

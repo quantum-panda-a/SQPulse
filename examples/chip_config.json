@@ -1,8 +1,8 @@
 {
-  "chip_name": "Sample-2Q-Superconducting-Chip",
-  "version": "1.0",
+  "chip_name": "Demo-2Q-Chip",
   "transmons": {
-    "q0": {
+    "q1": {
+      "name": "q1",
       "f_q": "5.0 GHz",
       "alpha": "-250.0 MHz",
       "d": 0.25,
@@ -11,9 +11,11 @@
       "t1": "30.0 us",
       "t2": "22.0 us",
       "temperature": "35 mK",
+      "omega_d": "50.0 MHz",
       "v_phi0": "0.85 V"
     },
-    "q1": {
+    "q2": {
+      "name": "q2",
       "f_q": "5.25 GHz",
       "alpha": "-240.0 MHz",
       "d": 1.0,
@@ -21,20 +23,56 @@
       "levels": 3,
       "t1": "45.0 us",
       "t2": "35.0 us",
-      "temperature": "25 mK",
-      "omega_d": "50.0 MHz"
+      "temperature": "35 mK",
+      "omega_d": "50.0 MHz",
+      "v_phi0": "0.85 V"
     }
   },
   "resonators": {
-    "r0": {
+    "r1": {
+      "name": "r1",
       "f_r": "7.05 GHz",
       "kappa": "2.8 MHz",
-      "chi": "1.3 MHz"
+      "kappa_ext": "1.4 MHz",
+      "geometry": "hanger"
     },
-    "r1": {
+    "r2": {
+      "name": "r2",
       "f_r": "7.30 GHz",
       "kappa": "2.5 MHz",
-      "chi": "1.1 MHz"
+      "kappa_ext": "1.25 MHz",
+      "geometry": "hanger"
     }
-  }
+  },
+  "couplings": [
+    {
+      "name": "g_q1_r1",
+      "type": "capacitive",
+      "modes": [
+        "q1",
+        "r1"
+      ],
+      "g": "50.0 MHz",
+      "chi": "1.3 MHz"
+    },
+    {
+      "name": "g_q2_r2",
+      "type": "capacitive",
+      "modes": [
+        "q2",
+        "r2"
+      ],
+      "g": "50.0 MHz",
+      "chi": "1.1 MHz"
+    },
+    {
+      "name": "g_q1_q2",
+      "type": "capacitive",
+      "modes": [
+        "q1",
+        "q2"
+      ],
+      "g": "15.0 MHz"
+    }
+  ]
 }

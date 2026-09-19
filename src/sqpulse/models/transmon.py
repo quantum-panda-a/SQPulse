@@ -36,10 +36,14 @@ class Transmon:
         levels (int): Number of Hilbert space levels to model (default 4: |0>, |1>, |2>, |3>).
         t1 (float): Energy relaxation time T1 in seconds (default inf).
         t2 (float): Dephasing time T2 in seconds (default inf).
+        temperature (Optional[Union[float, str]]): Bath temperature in Kelvin (or string like '35 mK').
+            Defaults to 0.0 K. Excited state thermal population n_th is automatically computed
+            via Bose-Einstein distribution and accessible via the `thermal_population` property.
         omega_d (Optional[float]): Physical drive coupling strength in Hz (defaults to 50 MHz = 50e6 Hz).
             Automatically multiplied by 2*pi internally to obtain angular frequency.
         v_phi0 (Optional[float]): Voltage required on Z line to induce one flux quantum Phi_0 in V / Phi_0 (default None).
             When None, pulse amplitudes on the Z channel are treated directly as flux in units of Phi_0.
+        thermal_population (Optional[float]): Optional direct setting for thermal population (deprecated, use temperature).
     """
 
     @staticmethod
@@ -97,10 +101,10 @@ class Transmon:
         levels: int = 4,
         t1: float = np.inf,
         t2: float = np.inf,
-        thermal_population: Optional[float] = None,
+        temperature: Optional[Union[float, str]] = None,
         omega_d: Optional[float] = None,
         v_phi0: Optional[float] = None,
-        temperature: Optional[Union[float, str]] = None,
+        thermal_population: Optional[float] = None,
     ):
         if levels < 2:
             raise ValueError(f"Transmon levels must be >= 2, got {levels}")
@@ -502,7 +506,6 @@ class Transmon:
             "t1": "inf" if np.isinf(self.t1) else (f"{self.t1 / 1e-6:.6g} us" if human_readable else self.t1),
             "t2": "inf" if np.isinf(self.t2) else (f"{self.t2 / 1e-6:.6g} us" if human_readable else self.t2),
             "temperature": f"{self.temperature * 1e3:.2f} mK" if (human_readable and self.temperature > 0) else self.temperature,
-            "thermal_population": self.thermal_population,
             "omega_d": f"{self.omega_d_hz / 1e6:.6g} MHz" if human_readable else self.omega_d_hz,
             "v_phi0": self.v_phi0,
         }

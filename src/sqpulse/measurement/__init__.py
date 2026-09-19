@@ -41,8 +41,6 @@ class Measurement:
         target: Optional[Any] = None,
         sequence: Optional[PulseSequence] = None,
         backend: Union[str, MeasurementBackend] = "projective",
-        *,
-        qubit: Optional[Any] = None,
         **kwargs,
     ) -> BaseMeasurementResult:
         """Execute a measurement or state evolution simulation with the selected backend.
@@ -51,7 +49,6 @@ class Measurement:
             target: Physical quantum model (e.g. Transmon) or composite system (QuantumSystem).
             sequence: PulseSequence to simulate.
             backend: Backend name (e.g. 'projective', 'dispersive') or a MeasurementBackend instance (default 'projective').
-            qubit: Alias for target for backward compatibility.
             **kwargs: Extra backend-specific parameters passed to the backend run() method:
                 For 'projective' backend:
                     - dt (float): Simulation time step in seconds (default 5e-10 s = 0.5 ns).
@@ -74,14 +71,13 @@ class Measurement:
         Returns:
             Result instance specific to the backend (ProjectiveResult or DispersiveResult).
         """
-        resolved_target = target if target is not None else qubit
-        if resolved_target is None:
-            raise ValueError("Must provide either target or qubit to Measurement.run")
+        if target is None:
+            raise ValueError("Must provide target to Measurement.run")
 
         seq = sequence or PulseSequence()
 
         if isinstance(backend, MeasurementBackend):
-            return backend.run(resolved_target, seq, **kwargs)
+            return backend.run(target, seq, **kwargs)
 
         backend_key = str(backend).lower()
         if backend_key not in cls._backends:
@@ -91,7 +87,7 @@ class Measurement:
             )
 
         backend_instance = cls._backends[backend_key]()
-        return backend_instance.run(resolved_target, seq, **kwargs)
+        return backend_instance.run(target, seq, **kwargs)
 
 
 __all__ = [

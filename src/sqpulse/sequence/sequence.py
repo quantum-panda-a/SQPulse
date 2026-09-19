@@ -211,37 +211,43 @@ class PulseSequence:
         self,
         dt: Optional[float] = 1e-9,
         alpha: Optional[float] = None,
+        total_time: Optional[float] = None,
     ) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         """Sample all channels onto a uniform time grid.
 
         Args:
             dt: Sample time step in seconds (default 1e-9 s = 1 ns). If None, chosen adaptively.
             alpha: Optional reference anharmonicity in Hz passed to pulses for DRAG scaling.
+            total_time: Optional total simulation time in seconds to extend grid beyond sequence.duration.
 
         Returns:
             times: 1D numpy array of time points [0, dt, ..., duration] in seconds.
             waveforms: Dict mapping channel name to complex 1D array of baseband signal.
         """
-        total_time = self.duration
-        if total_time <= 0:
+        if total_time is not None:
+            tot_time = float(total_time)
+        else:
+            tot_time = self.duration
+
+        if tot_time <= 0:
             return np.array([0.0]), {ch: np.array([0.0 + 0j]) for ch in self.channels}
 
         if dt is not None:
             dt = float(dt)
             if dt <= 0:
                 raise ValueError(f"Sampling step dt must be positive, got {dt} s")
-            if dt >= total_time:
+            if dt >= tot_time:
                 hint = ""
-                if dt > 1e-3 and total_time < 1e-3:
+                if dt > 1e-3 and tot_time < 1e-3:
                     hint = f" Did you mean dt={dt}e-9 s ({dt} ns)? All time parameters in SQPulse are strictly in SI units (seconds)."
                 raise ValueError(
-                    f"Sampling interval dt={dt} s cannot be greater than or equal to total sequence duration={total_time} s.{hint}"
+                    f"Sampling interval dt={dt} s cannot be greater than or equal to total sequence duration={tot_time} s.{hint}"
                 )
         else:
-            dt = min(total_time / 200, 1e-9)
+            dt = min(tot_time / 200, 1e-9)
 
-        n_pts = int(np.round(total_time / dt)) + 1
-        times = np.linspace(0, total_time, n_pts, endpoint=True)
+        n_pts = int(np.round(tot_time / dt)) + 1
+        times = np.linspace(0, tot_time, n_pts, endpoint=True)
 
         waveforms = {}
         for ch, pulse_list in self._channels.items():

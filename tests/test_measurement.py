@@ -44,20 +44,24 @@ def test_projective_measurement_shots_and_counts():
     assert 800 < counts[1] < 1200
 
 
-def test_measurement_run_target_and_qubit_kwargs():
-    """Verify Measurement.run accepts target and qubit kwargs interchangeably."""
+def test_measurement_run_requires_target_no_qubit_alias():
+    """Verify Measurement.run requires target and no longer supports qubit alias."""
     q = Transmon("q0", f_q=5.0e9, levels=2, omega_d=50e6)
     duration = 20e-9
     v0_pi = np.pi / (q.omega_d * duration)
     seq = PulseSequence().add(q.xy, SquarePulse(duration=duration, amp=v0_pi))
 
-    # Using target=
+    # Using target= succeeds
     res_target = Measurement.run(target=q, sequence=seq, dt=5e-10)
     assert np.isclose(res_target.final_population(1), 1.0, atol=1e-3)
 
-    # Using qubit=
-    res_qubit = Measurement.run(qubit=q, sequence=seq, dt=5e-10)
-    assert np.isclose(res_qubit.final_population(1), 1.0, atol=1e-3)
+    # Passing positional target succeeds
+    res_pos = Measurement.run(q, sequence=seq, dt=5e-10)
+    assert np.isclose(res_pos.final_population(1), 1.0, atol=1e-3)
+
+    # Calling with qubit= instead of target= raises ValueError
+    with pytest.raises(ValueError, match="Must provide target to Measurement.run"):
+        Measurement.run(qubit=q, sequence=seq, dt=5e-10)
 
 
 def test_simulator_completely_removed():

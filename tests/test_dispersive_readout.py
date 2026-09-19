@@ -66,7 +66,7 @@ def test_dispersive_readout_backend_ground_and_excited():
     seq_ground.delay(q.xy, 20e-9)
 
     res_ground = Measurement.run(
-        qubit=q,
+        target=q,
         sequence=seq_ground,
         backend="dispersive",
         resonator=res,
@@ -88,7 +88,7 @@ def test_dispersive_readout_backend_ground_and_excited():
         .add(q.ro, SquarePulse(duration=1000e-9, amp=1.0))
     )
     res_excited = Measurement.run(
-        qubit=q,
+        target=q,
         sequence=seq_excited,
         backend="dispersive",
         resonator=res,
@@ -99,3 +99,56 @@ def test_dispersive_readout_backend_ground_and_excited():
     counts_1 = res_excited.counts()
     # For excited state, the vast majority should be 1
     assert counts_1.get(1, 0) > 900
+
+
+def test_dispersive_dynamic_s21_and_concurrent_pulses():
+    """Verify dynamic S21 extraction and concurrent Z-flux and RO pulse simulation in Measurement.run."""
+    q = Transmon("q_dyn", f_q=5.0e9, alpha=-250e6, d=0.25, v_phi0=0.8)
+    res = ReadoutResonator("r_dyn", f_r=7.05e9, kappa=2.8e6, kappa_ext=1.4e6, geometry="hanger")
+    g = 50e6
+
+    # Create concurrent sequence: 800 ns Z flux pulse and 500 ns RO pulse
+    # V_z = 0.2 V corresponds to Phi = 0.2 / 0.8 = 0.25 Phi_0
+    flux_pulse = FlatTopPulse(duration=800e-9, ramp_time=20e-9, amp=0.2)
+    ro_pulse = FlatTopPulse(duration=500e-9, ramp_time=20e-9, amp=0.5)
+
+    seq = PulseSequence()
+    seq.align_center((q.z, flux_pulse), (q.ro, ro_pulse))
+
+    # Calculate expected dressed frequency at flux = 0.25 Phi_0
+    f_eff_expected = res.effective_frequency_at_flux(q, flux=0.25, g=g, qubit_state=0)
+
+    # 1. Run at resonance (f_ro = f_eff_expected): should see transmission dip (~0.5 / -6 dB)
+    res_on = Measurement.run(
+        target=q,
+        sequence=seq,
+        resonator=res,
+        backend="dispersive",
+        f_ro=f_eff_expected,
+        g=g,
+        qubit_state=0,
+    )
+    assert isinstance(res_on, DispersiveResult)
+    assert res_on.s21 is not None
+    assert res_on.s21_db is not None
+    assert np.isclose(abs(res_on.s21), 0.5, atol=0.08)
+    assert res_on.s21_db < -4.5
+
+    # Check fields and plot methods
+    assert 0 in res_on.input_fields and 0 in res_on.output_fields
+    ax = res_on.plot_output_waveforms(state=0)
+    assert ax is not None
+
+    # 2. Run far off-resonance: should see transmission ~ 1.0 (0 dB)
+    res_off = Measurement.run(
+        target=q,
+        sequence=seq,
+        resonator=res,
+        backend="dispersive",
+        f_ro=f_eff_expected + 50e6,
+        g=g,
+        qubit_state=0,
+    )
+    assert np.isclose(abs(res_off.s21), 1.0, atol=0.05)
+    assert abs(res_off.s21_db) < 0.5
+
